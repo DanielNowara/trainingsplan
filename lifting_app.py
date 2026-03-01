@@ -14,31 +14,32 @@ DATA_FILE = "athletes.json"
 
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as file:
+        with open(DATA_FILE, "r", encoding="utf-8") as file:
             return json.load(file)
     return {}
 
 def save_data(data):
-    with open(DATA_FILE, "w") as file:
+    with open(DATA_FILE, "w", encoding="utf-8") as file:
         json.dump(data, file, indent=4)
 
 db = load_data()
 
 # ==========================================
-# 2. KATALOGE & LOGIK
+# 2. KATALOGE, LOGIK & MUSTERPLÄNE
 # ==========================================
 EXERCISE_CATALOG = {
-    "Reißen": ["Snatch", "Power Snatch", "Hang Snatch", "Snatch Balance", "Muscle Snatch", "Block Snatch"],
-    "Stoßen": ["Clean & Jerk", "Power Clean", "Split Jerk", "Power Jerk", "Hang Clean", "Clean Pull"],
-    "Beugen": ["Back Squat", "Front Squat", "Pause Squat", "Box Squat", "Overhead Squat"],
-    "Zubehör": ["Snatch Pull", "Clean Pull", "Push Press", "Strict Press", "Plank", "Hyperextensions"]
+    "Reißen (Snatch)": ["Snatch", "Power Snatch", "Hang Snatch", "Snatch Balance", "Muscle Snatch", "Block Snatch", "Tall Snatch", "Deficit Snatch"],
+    "Stoßen (Clean & Jerk)": ["Clean & Jerk", "Power Clean", "Split Jerk", "Power Jerk", "Hang Clean", "Block Clean", "Jerk from Rack"],
+    "Beugen (Squats)": ["Back Squat", "Front Squat", "Pause Squat", "Box Squat", "Overhead Squat", "Bulgarian Split Squats"],
+    "Zug (Pulls)": ["Snatch Pull", "Clean Pull", "Snatch Deadlift", "Clean Deadlift", "Deficit Pulls", "Hang Pulls"],
+    "Zubehör (Accessory)": ["Push Press", "Strict Press", "Plank", "Hyperextensions", "GHD Raises", "Pendlay Rows", "Pull-ups", "Dips", "Core-Rotation"]
 }
 ALL_EXERCISES = [ex for sublist in EXERCISE_CATALOG.values() for ex in sublist]
 
 INJURY_SWAPS = {
     "Knie": {"Back Squat": "Box Squat", "Front Squat": "Pause Squat", "Clean & Jerk": "Power Clean & Power Jerk"},
     "Schulter": {"Snatch": "Clean Pull", "Push Press": "Strict Press", "Split Jerk": "Jerk Drives"},
-    "Unterer Rücken": {"Back Squat": "Front Squat", "Snatch Pull": "Hang Snatch Pull", "Deadlift": "Hyperextensions"}
+    "Unterer Rücken": {"Back Squat": "Front Squat", "Snatch Pull": "Hang Snatch Pull", "Snatch Deadlift": "Hyperextensions"}
 }
 
 MOBILITY_DRILLS = {
@@ -47,25 +48,38 @@ MOBILITY_DRILLS = {
     "Unterer Rücken": "Cat-Cow (20x), 90/90 Hip Stretch, Bird-Dog."
 }
 
-def calc_sinclair(total, bw, gender):
-    if gender == "Männlich":
-        A, B = 0.7519, 175.5
-    else:
-        A, B = 0.7834, 153.6
-    if bw > B: return total
-    res = 10 ** (A * (math.log10(bw / B) ** 2))
-    return round(total * res, 2)
+# Musterpläne (Empfehlungen)
+RECOMMENDED_TEMPLATES = {
+    2: {"Tag 1": ["Snatch", "Back Squat", "Snatch Pull", "Plank"], "Tag 2": ["Clean & Jerk", "Front Squat", "Clean Pull", "Push Press"]},
+    3: {"Tag 1": ["Snatch", "Back Squat", "Snatch Pull"], "Tag 2": ["Power Clean", "Power Jerk", "Front Squat"], "Tag 3": ["Clean & Jerk", "Overhead Squat", "Clean Pull", "Hyperextensions"]},
+    4: {"Tag 1": ["Snatch", "Back Squat"], "Tag 2": ["Clean & Jerk", "Clean Pull"], "Tag 3": ["Power Snatch", "Front Squat", "Push Press"], "Tag 4": ["Snatch", "Clean & Jerk", "Plank"]},
+    5: {"Tag 1": ["Snatch", "Back Squat"], "Tag 2": ["Clean & Jerk", "Clean Pull"], "Tag 3": ["Power Snatch", "Push Press"], "Tag 4": ["Power Clean", "Front Squat"], "Tag 5": ["Snatch", "Clean & Jerk", "Snatch Pull"]},
+    6: {"Tag 1": ["Snatch", "Back Squat"], "Tag 2": ["Clean & Jerk", "Clean Pull"], "Tag 3": ["Power Snatch", "Push Press"], "Tag 4": ["Power Clean", "Front Squat"], "Tag 5": ["Snatch", "Snatch Pull"], "Tag 6": ["Clean & Jerk", "Back Squat", "Plank"]}
+}
 
-def calculate_plates(weight, bar_weight=20):
-    available_plates = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5]
-    if weight < bar_weight: return "Stange leer"
-    weight_per_side = (weight - bar_weight) / 2
-    plates_to_load = []
-    for plate in available_plates:
-        while weight_per_side >= plate:
-            plates_to_load.append(str(plate))
-            weight_per_side = round(weight_per_side - plate, 2)
-    return " + ".join(plates_to_load) if plates_to_load else "Stange leer"
+def get_sets_reps(phase, ex_name):
+    # Einfache Logik, um Sätze/Wdh basierend auf Phase und Übungstyp zu generieren
+    is_tech = ex_name in EXERCISE_CATALOG["Reißen (Snatch)"] or ex_name in EXERCISE_CATALOG["Stoßen (Clean & Jerk)"]
+    is_strength = ex_name in EXERCISE_CATALOG["Beugen (Squats)"] or ex_name in EXERCISE_CATALOG["Zug (Pulls)"]
+    
+    if phase == "Hypertrophie":
+        if is_tech: return "4 x 4"
+        if is_strength: return "5 x 5"
+        return "3 x 10"
+    elif phase == "Kraft":
+        if is_tech: return "5 x 2"
+        if is_strength: return "5 x 3"
+        return "3 x 8"
+    else: # Peaking
+        if is_tech: return "5 x 1"
+        if is_strength: return "3 x 2"
+        return "3 x 5"
+
+def calc_sinclair(total, bw, gender):
+    if gender == "Männlich": A, B = 0.7519, 175.5
+    else: A, B = 0.7834, 153.6
+    if bw > B: return total
+    return round(total * (10 ** (A * (math.log10(bw / B) ** 2))), 2)
 
 # ==========================================
 # 3. SIDEBAR: SPORTLER MANAGEMENT
@@ -84,19 +98,26 @@ if selected_athlete == "-- Neuer Sportler --":
     new_squat = st.sidebar.number_input("Back Squat 1RM", 20, 400, 120)
     if st.sidebar.button("Sportler Speichern"):
         if new_name:
-            db[new_name] = {"gender": new_gender, "bw": new_bw, "snatch": new_snatch, "cj": new_cj, "squat": new_squat}
+            db[new_name] = {
+                "gender": new_gender, "bw": new_bw, "snatch": new_snatch, 
+                "cj": new_cj, "squat": new_squat, "saved_plans": {}
+            }
             save_data(db)
-            st.sidebar.success(f"{new_name} gespeichert! Seite wird neu geladen...")
+            st.sidebar.success(f"{new_name} gespeichert! Seite neu laden...")
             st.rerun()
 else:
     athlete_data = db[selected_athlete]
+    # Sicherstellen, dass alte Profile das neue Feld 'saved_plans' haben
+    if "saved_plans" not in athlete_data:
+        athlete_data["saved_plans"] = {}
+        
     st.sidebar.success(f"Eingeloggt: {selected_athlete}")
     with st.sidebar.expander("Profil / 1RM Update"):
         bw = st.number_input("Gewicht", value=float(athlete_data["bw"]))
         s_rm = st.number_input("Snatch", value=int(athlete_data["snatch"]))
         c_rm = st.number_input("C&J", value=int(athlete_data["cj"]))
         sq_rm = st.number_input("Squat", value=int(athlete_data["squat"]))
-        if st.button("Update"):
+        if st.button("Werte Update"):
             db[selected_athlete].update({"bw": bw, "snatch": s_rm, "cj": c_rm, "squat": sq_rm})
             save_data(db)
             st.rerun()
@@ -107,6 +128,7 @@ else:
 if selected_athlete != "-- Neuer Sportler --":
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Readiness", "📝 Trainingsplan", "⏱️ Workout", "🏆 Tools"])
 
+    # --- TAB 1: READINESS ---
     with tab1:
         st.header(f"Status: {selected_athlete}")
         col1, col2 = st.columns(2)
@@ -121,52 +143,121 @@ if selected_athlete != "-- Neuer Sportler --":
             injuries = st.multiselect("Beschwerden?", ["Knie", "Schulter", "Unterer Rücken"])
             for inj in injuries: st.warning(f"Fokus {inj}: {MOBILITY_DRILLS[inj]}")
 
+    # --- TAB 2: TRAININGSPLAN GENERATOR ---
     with tab2:
-        st.header("Plan Generator")
+        st.header("Plan Generator & Speicher")
+        
+        # Einstellungen
         c1, c2, c3 = st.columns(3)
         prep_weeks = c1.slider("Wochen", 4, 16, 8)
         current_week = c2.slider("Woche", 1, prep_weeks, 1)
-        days_per_week = c3.selectbox("Tage/Woche", [3, 4, 5, 6], index=1)
-
+        
+        # Phasen Logik
         if current_week <= prep_weeks // 3: phase, base_int = "Hypertrophie", 0.72
         elif current_week <= (2 * prep_weeks) // 3: phase, base_int = "Kraft", 0.82
         else: phase, base_int = "Peaking", 0.92
-        
         final_int = base_int * readiness_mod
-        weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"][:days_per_week]
+
+        st.info(f"**Aktuelle Phase:** {phase} | **Intensität:** {int(final_int*100)}% vom 1RM")
+
+        # Plan-Quelle wählen
+        plan_mode = st.radio("Wie möchtest du deinen Plan erstellen?", 
+                             ["Empfohlener Musterplan", "Gespeicherten Plan laden", "Komplett selbst erstellen"], 
+                             horizontal=True)
+
+        current_plan_structure = {}
+
+        if plan_mode == "Empfohlener Musterplan":
+            days_per_week = st.selectbox("Trainingstage/Woche", [2, 3, 4, 5, 6], index=1)
+            current_plan_structure = RECOMMENDED_TEMPLATES[days_per_week]
+            st.success(f"Musterplan für {days_per_week} Tage geladen.")
+
+        elif plan_mode == "Gespeicherten Plan laden":
+            saved_plans = list(athlete_data.get("saved_plans", {}).keys())
+            if not saved_plans:
+                st.warning("Du hast noch keine Pläne gespeichert.")
+            else:
+                selected_plan_name = st.selectbox("Wähle einen Plan", saved_plans)
+                current_plan_structure = athlete_data["saved_plans"][selected_plan_name]
+                st.success(f"Plan '{selected_plan_name}' geladen.")
+
+        elif plan_mode == "Komplett selbst erstellen":
+            custom_days = st.slider("Wie viele Tage?", 1, 7, 3)
+            for i in range(custom_days):
+                day_name = f"Tag {i+1}"
+                num_ex = st.number_input(f"Übungen für {day_name}", 1, 8, 3, key=f"num_{i}")
+                current_plan_structure[day_name] = [ALL_EXERCISES[0]] * num_ex # Placeholder füllen
+
+        st.divider()
+        st.subheader("Dein aktueller Plan (Wird berechnet)")
         
-        for day in weekdays:
-            with st.expander(f"📅 {day} konfigurieren", expanded=True):
-                num_ex = st.slider(f"Übungen {day}", 1, 6, 3, key=f"n_{day}")
+        # Plan anzeigen & Editieren (falls im "Selbst erstellen" Modus)
+        final_plan_to_save = {}
+        
+        for day, exercises in current_plan_structure.items():
+            with st.expander(f"📅 {day}", expanded=True):
                 day_data = []
-                for i in range(num_ex):
-                    # Sinnvolle Vorauswahl
-                    d_idx = 0 if i == 0 else (2 if i == 1 else 3)
-                    ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=d_idx, key=f"s_{day}_{i}")
+                final_exercises = []
+                
+                for i, ex_name in enumerate(exercises):
+                    # Wenn "Selbst erstellen" gewählt wurde, zeige Selectbox, sonst fixen Text (oder Selectbox mit Default)
+                    if plan_mode == "Komplett selbst erstellen":
+                        ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=ALL_EXERCISES.index(ex_name), key=f"sel_{day}_{i}")
+                    else:
+                        ex_choice = ex_name # Im Musterplan fix (könnte man hier auch anpassbar machen)
+                    
+                    final_exercises.append(ex_choice)
+                    
                     # Injury Swap
                     for inj in injuries:
                         if ex_choice in INJURY_SWAPS[inj]: ex_choice = INJURY_SWAPS[inj][ex_choice]
                     
+                    # Berechnung Kilos
                     rm_ref = athlete_data["squat"] if "Squat" in ex_choice or "Press" in ex_choice else (athlete_data["snatch"] if "Snatch" in ex_choice else athlete_data["cj"])
                     calc_w = round(rm_ref * final_int, 1)
-                    day_data.append({"Übung": ex_choice, "Last": f"{calc_w} kg", "Plates": calculate_plates(calc_w)})
+                    if ex_choice in EXERCISE_CATALOG["Zubehör (Accessory)"]:
+                        calc_w = "Körpergewicht / RPE 8" # Zubehör wird nicht zwingend über 1RM berechnet
+                    else:
+                        calc_w = f"{calc_w} kg"
+                        
+                    # Berechnung Sätze & Wdh
+                    sets_reps = get_sets_reps(phase, ex_choice)
+                    
+                    day_data.append({"Übung": ex_choice, "Sätze x Wdh": sets_reps, "Ziel-Gewicht": calc_w})
+                
+                final_plan_to_save[day] = final_exercises
                 st.table(pd.DataFrame(day_data))
+                
+        # --- PLAN SPEICHERN ---
+        st.divider()
+        st.subheader("Diesen Plan speichern")
+        save_name = st.text_input("Name für den Plan (z.B. 'Mein 4-Tage Fokus Snatch')")
+        if st.button("Plan in Profil speichern"):
+            if save_name:
+                athlete_data["saved_plans"][save_name] = final_plan_to_save
+                db[selected_athlete] = athlete_data
+                save_data(db)
+                st.success(f"Plan '{save_name}' wurde dauerhaft gespeichert!")
+                st.rerun()
+            else:
+                st.error("Bitte gib einen Namen ein.")
 
+    # --- TAB 3: WORKOUT TIMER ---
     with tab3:
         components.html("""
         <div style="background:#1e1e1e; padding:15px; border-radius:10px; color:white; text-align:center;">
             <h3>Pausen-Timer</h3><h1 id="t">02:00</h1>
-            <button onclick="s(120)" style="background:#4CAF50; color:white; border:none; padding:10px;">2 Min</button>
-            <button onclick="s(180)" style="background:#2196F3; color:white; border:none; padding:10px;">3 Min</button>
+            <button onclick="s(90)" style="background:#FF9800; color:white; border:none; padding:10px; border-radius:5px;">1.5 Min</button>
+            <button onclick="s(120)" style="background:#4CAF50; color:white; border:none; padding:10px; border-radius:5px;">2 Min</button>
+            <button onclick="s(180)" style="background:#2196F3; color:white; border:none; padding:10px; border-radius:5px;">3 Min</button>
             <script>var i; function s(d){clearInterval(i); var t=d,m,s; i=setInterval(function(){m=parseInt(t/60,10);s=parseInt(t%60,10);document.getElementById('t').textContent=(m<10?"0"+m:m)+":"+(s<10?"0"+s:s);if(--t<0)clearInterval(i);},1000);}</script>
-        </div>""", height=180)
-        st.checkbox("Training gestartet")
+        </div>""", height=200)
 
+    # --- TAB 4: TOOLS ---
     with tab4:
-        st.subheader("Plate Calculator")
-        tw = st.number_input("Gewicht (kg)", 20.0, 300.0, 100.0, step=2.5)
-        st.success(f"Pro Seite: {calculate_plates(tw)}")
+        st.subheader("🏆 Wettkampf & Tools")
         sinclair = calc_sinclair(athlete_data["snatch"] + athlete_data["cj"], athlete_data["bw"], athlete_data["gender"])
-        st.metric("Sinclair Score", sinclair)
+        st.metric("Dein Sinclair Score", sinclair)
+        st.write("*(Basierend auf deinem Total und Körpergewicht im Profil)*")
 else:
-    st.info("Bitte links einen Sportler anlegen oder wählen.")
+    st.info("Bitte links in der Sidebar einen Sportler anlegen oder wählen, um zu starten.")
