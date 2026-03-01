@@ -36,26 +36,21 @@ EXERCISE_CATALOG = {
 }
 ALL_EXERCISES = [ex for sublist in EXERCISE_CATALOG.values() for ex in sublist]
 
-# Musterpläne orientiert an der RTK (Immer WK -> ZUB -> ATH)
 RECOMMENDED_TEMPLATES = {
     2: {"Tag 1 (Fokus Reißen)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
         "Tag 2 (Fokus Stoßen)": ["Stoßen (Clean & Jerk)", "Kniebeuge vorn", "Zug eng (Clean Pull)", "Rumpfaufrichten (Hyperextensions)"]},
-    
     3: {"Tag 1 (Reißen & Beuge)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)", "Kraftdrücken (Strict Press)"], 
         "Tag 2 (Stand-Varianten)": ["Standumsetzen", "Schwungdrücken", "Kniebeuge vorn (Leicht)", "Bauchpresse"], 
         "Tag 3 (Klassisch Schwer)": ["Stoßen (Clean & Jerk)", "Reißkniebeuge", "Zug eng (Clean Pull)", "Rumpfaufrichten (Hyperextensions)"]},
-    
     4: {"Tag 1 (Schwer Beugen)": ["Kniebeuge hinten", "Reißen (Snatch)", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
         "Tag 2 (Schwer Umsetzen)": ["Stoßen (Clean & Jerk)", "Zug eng (Clean Pull)", "Schwungdrücken", "Klimmzüge"], 
         "Tag 3 (Technik/Stand)": ["Standreißen", "Standumsetzen", "Reißkniebeuge", "Bauchpresse"], 
         "Tag 4 (Wettkampfnah)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge vorn", "Rumpfaufrichten (Hyperextensions)"]},
-    
     5: {"Tag 1 (Technik Reißen)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
         "Tag 2 (Technik Stoßen)": ["Stoßen (Clean & Jerk)", "Zug eng (Clean Pull)", "Kraftdrücken (Strict Press)", "Klimmzüge"], 
         "Tag 3 (Stand/Entlastung)": ["Standreißen", "Standumsetzen", "Schwungdrücken", "Bauchpresse"], 
         "Tag 4 (Schwer Beugen)": ["Kniebeuge vorn", "Ausstoßen", "Zug breit (Snatch Pull)", "Rumpfaufrichten (Hyperextensions)"], 
         "Tag 5 (Max/Klassiker)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten", "Kugelschocken (Med-Ball)"]},
-    
     6: {"Tag 1 (Beuge & Reißen)": ["Kniebeuge hinten", "Reißen (Snatch)", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
         "Tag 2 (Züge & Stoßen)": ["Stoßen (Clean & Jerk)", "Kniebeuge vorn", "Zug eng (Clean Pull)", "Bauchpresse"], 
         "Tag 3 (Stand-Technik)": ["Standreißen", "Schwungdrücken", "Reißkniebeuge", "Klimmzüge"], 
@@ -72,24 +67,19 @@ def get_rm_for_exercise(ex_choice, athlete_data):
     return athlete_data["cj"]
 
 def get_progressive_sets(phase, ex_name, rm):
-    # Athletik/Rumpf bekommt keine % Berechnung
     if ex_name in EXERCISE_CATALOG["ATH - Athletik & Rumpf"]:
         return "3 Sätze x 10-15 Wdh (Zusatzlast nach Gefühl)"
 
     mod = 0.85 if "(Leicht)" in ex_name or "Stand" in ex_name else 1.0
     rm = rm * mod
 
-    # Orientiert an BVDG Intensitätszonen (Z1-Z5)
     if "VP1" in phase:
-        # Zone 1-3: Viel Volumen, Technik festigen (70-80%)
         w1, w2, w3 = round(rm*0.70), round(rm*0.75), round(rm*0.80)
         return f"{w1}kg/4/2 , {w2}kg/3/2 , {w3}kg/3/1"
     elif "VP2" in phase:
-        # Zone 3-4: Kraftausprägung, weniger Wdh, höhere Last (80-90%)
         w1, w2, w3 = round(rm*0.80), round(rm*0.85), round(rm*0.90)
         return f"{w1}kg/3/1 , {w2}kg/2/2 , {w3}kg/2/2"
     else: 
-        # WP: Wettkampfperiode, Peaking (85-100%)
         w1, w2, w3 = round(rm*0.85), round(rm*0.90), round(rm*0.95)
         return f"{w1}kg/2/1 , {w2}kg/1/1 , {w3}kg/1/2"
 
@@ -150,23 +140,19 @@ else:
 # 4. HAUPT-APP
 # ==========================================
 if selected_athlete != "-- Neuer Sportler --":
-    tab1, tab2, tab3 = st.tabs(["📝 RTK Trainingsplan", "📖 Logbuch", "⏱️ Tools & Readiness"])
+    tab1, tab2, tab3 = st.tabs(["📝 Interaktiver Trainingsplan", "📖 Logbuch", "⏱️ Tools & Readiness"])
 
     # --- TAB 1: TRAININGSPLAN GENERATOR ---
     with tab1:
-        st.header("Plan Generator (Basierend auf RTK/BVDG)")
+        st.header("Plan Generator (Manuelle Anpassung)")
         
         c1, c2 = st.columns(2)
         prep_weeks = c1.slider("Zykluslänge (Wochen)", 4, 16, 12)
         current_week = c2.slider("Aktuelle Woche", 1, prep_weeks, 1)
         
-        # RTK Phasen (Makrozyklus)
-        if current_week <= prep_weeks * 0.4: 
-            phase = "VP1 (Vorbereitungsperiode 1) - Fokus: Volumen, Technik, Basis"
-        elif current_week <= prep_weeks * 0.8: 
-            phase = "VP2 (Vorbereitungsperiode 2) - Fokus: Kraftausprägung, Zone 3-4"
-        else: 
-            phase = "WP (Wettkampfperiode) - Fokus: Peaking, ZNS-Aktivierung, Zone 5"
+        if current_week <= prep_weeks * 0.4: phase = "VP1 (Vorbereitungsperiode 1) - Fokus: Volumen, Technik"
+        elif current_week <= prep_weeks * 0.8: phase = "VP2 (Vorbereitungsperiode 2) - Fokus: Kraftausprägung"
+        else: phase = "WP (Wettkampfperiode) - Fokus: Peaking"
             
         st.success(f"**Aktuelle Trainingsetappe:** {phase}")
 
@@ -179,7 +165,6 @@ if selected_athlete != "-- Neuer Sportler --":
         if plan_mode == "RTK Musterplan laden":
             days_per_week = st.selectbox("Trainingstage/Woche", [2, 3, 4, 5, 6], index=2)
             current_plan_structure = RECOMMENDED_TEMPLATES[days_per_week]
-            st.caption("ℹ️ RTK-Prinzip: Ein Tag beginnt idR mit einer WK-Übung, geht in eine spezielle ZUB (Beuge/Zug) über und endet mit Athletik (ATH).")
             
         elif plan_mode == "Gespeicherten Plan laden":
             saved_plans = list(athlete_data.get("saved_plans", {}).keys())
@@ -194,44 +179,69 @@ if selected_athlete != "-- Neuer Sportler --":
             for i in range(custom_days):
                 day_name = f"Trainingstag {i+1}"
                 num_ex = st.number_input(f"Anzahl Übungen für {day_name}", 1, 8, 4, key=f"num_{i}")
-                current_plan_structure[day_name] = [ALL_EXERCISES[0]] * num_ex
+                current_plan_structure[day_name] = [{"übung": ALL_EXERCISES[0], "vorgabe": ""}] * num_ex
 
         st.divider()
-        st.subheader("Dein aktueller Plan")
+        st.markdown("### Dein aktueller Plan")
+        st.info("💡 **Tipp:** Die Werte im rechten Textfeld sind smarte Empfehlungen. Du kannst reinklicken, sie verändern und den Plan danach als *deinen* ganz persönlichen Plan speichern!")
         
         final_plan_to_save = {}
         
+        # Interaktive Anzeige der Tage
         for day, exercises in current_plan_structure.items():
             with st.expander(f"📅 {day}", expanded=True):
-                day_data = []
-                final_exercises = []
+                day_plan_to_save = []
                 
-                for i, ex_name in enumerate(exercises):
-                    if plan_mode == "Komplett selbst erstellen":
-                        ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=ALL_EXERCISES.index(ex_name), key=f"sel_{day}_{i}")
+                for i, item in enumerate(exercises):
+                    # Rückwärtskompatibilität: Falls der Plan alt ist und nur aus Strings besteht
+                    if isinstance(item, dict):
+                        default_ex = item.get("übung", ALL_EXERCISES[0])
+                        saved_vorgabe = item.get("vorgabe", "")
                     else:
-                        ex_choice = ex_name
+                        default_ex = item
+                        saved_vorgabe = ""
                         
-                    final_exercises.append(ex_choice)
+                    # Sicheres Index-Finden
+                    idx = ALL_EXERCISES.index(default_ex) if default_ex in ALL_EXERCISES else 0
+
+                    c_ex, c_rep = st.columns([1, 2])
                     
+                    with c_ex:
+                        # Übungsauswahl ist in ALLEN Modi verfügbar (volle Freiheit)
+                        ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=idx, key=f"ex_{day}_{i}")
+                    
+                    # Berechne die aktuelle Empfehlung der App
                     rm_ref = get_rm_for_exercise(ex_choice, athlete_data)
-                    progression_string = get_progressive_sets(phase, ex_choice, rm_ref)
+                    recommendation = get_progressive_sets(phase, ex_choice, rm_ref)
                     
-                    day_data.append({"Übung": ex_choice, "Vorgabe (Gewicht / Wdh / Sätze)": progression_string})
+                    # Welcher Text wird im Feld angezeigt?
+                    # Wenn wir einen alten Plan geladen haben, die Übung nicht verändert wurde und eine Vorgabe existiert, nutze diese.
+                    if plan_mode == "Gespeicherten Plan laden" and saved_vorgabe and ex_choice == default_ex:
+                        display_val = saved_vorgabe
+                    else:
+                        display_val = recommendation # Sonst nimm immer die frische App-Empfehlung
+
+                    with c_rep:
+                        # Hier kann der Nutzer alles manuell eintippen!
+                        user_vorgabe = st.text_input(f"Vorgabe (App-Empfehlung: {recommendation})", value=display_val, key=f"vg_{day}_{i}")
+                    
+                    # Speichere das Ergebnis als Dictionary
+                    day_plan_to_save.append({"übung": ex_choice, "vorgabe": user_vorgabe})
                 
-                final_plan_to_save[day] = final_exercises
-                st.table(pd.DataFrame(day_data))
+                final_plan_to_save[day] = day_plan_to_save
                 
         st.divider()
         st.subheader("Plan dauerhaft speichern")
-        save_name = st.text_input("Name für den Plan (z.B. 'VP1 - 4 Tage RTK')", placeholder="Plan Name eingeben...")
-        if st.button("Speichern"):
+        save_name = st.text_input("Name für den Plan (z.B. 'Meine Individuelle VP1')", placeholder="Plan Name eingeben...")
+        if st.button("Diesen individuellen Plan speichern"):
             if save_name:
                 athlete_data["saved_plans"][save_name] = final_plan_to_save
                 db[selected_athlete] = athlete_data
                 save_data(db)
-                st.success("Erfolgreich gespeichert!")
+                st.success(f"Erfolgreich gespeichert! Der Plan '{save_name}' merkt sich nun exakt deine eingetragenen Wiederholungen und Gewichte.")
                 st.rerun()
+            else:
+                st.error("Bitte gib dem Plan einen Namen.")
 
     # --- TAB 2: LOGBUCH & HISTORY ---
     with tab2:
