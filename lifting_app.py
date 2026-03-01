@@ -26,7 +26,6 @@ def save_data(data):
 db = load_data()
 
 def parse_log_metrics(log_string):
-    """Berechnet NL (Number of Lifts) und Tonnage aus einem String wie '100/3/2 , 105/2/1'"""
     tonnage = 0
     nl = 0
     max_weight = 0
@@ -45,7 +44,6 @@ def parse_log_metrics(log_string):
     return tonnage, nl, max_weight
 
 def calc_sinclair(total, bw, gender):
-    """Sinclair Koeffizienten (Näherung für die aktuellen Olympischen Zyklen)"""
     if gender == "Männlich": A, B = 0.7519, 175.5
     else: A, B = 0.7834, 153.6
     if bw > B: return total
@@ -131,7 +129,6 @@ if selected_athlete == "-- Neuer Sportler --":
             st.rerun()
 else:
     athlete_data = db[selected_athlete]
-    # Fallback für alte Daten
     athlete_data.setdefault("logbook", [])
     athlete_data.setdefault("saved_plans", {})
     athlete_data.setdefault("front_squat", athlete_data["squat"] * 0.85)
@@ -155,7 +152,7 @@ else:
 # 4. HAUPT-APP
 # ==========================================
 if selected_athlete != "-- Neuer Sportler --":
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "📖 Logbuch", "📈 Analytics", "🏆 Wettkampf & Tools"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "🏋️‍♂️ Live-Workout (Logbuch)", "📈 Analytics", "🏆 Tools"])
 
     # --- TAB 1: TRAININGSPLAN GENERATOR ---
     with tab1:
@@ -167,8 +164,6 @@ if selected_athlete != "-- Neuer Sportler --":
         if current_week <= prep_weeks * 0.4: phase = "VP1 (Vorbereitungsperiode 1) - Volumen & Technik"
         elif current_week <= prep_weeks * 0.8: phase = "VP2 (Vorbereitungsperiode 2) - Kraftausprägung"
         else: phase = "WP (Wettkampfperiode) - Peaking"
-            
-        st.success(f"**Trainingsetappe:** {phase}")
 
         plan_mode = st.radio("Erstellungsmethode:", ["RTK Musterplan laden", "Gespeicherten Plan laden", "Komplett selbst erstellen"], horizontal=True)
 
@@ -212,7 +207,7 @@ if selected_athlete != "-- Neuer Sportler --":
                     recommendation = get_progressive_sets(phase, ex_choice, rm_ref)
                     display_val = saved_vorgabe if (plan_mode == "Gespeicherten Plan laden" and saved_vorgabe and ex_choice == default_ex) else recommendation
 
-                    with c_rep: user_vorgabe = st.text_input(f"Vorgabe (App: {recommendation})", value=display_val, key=f"vg_{day}_{i}")
+                    with c_rep: user_vorgabe = st.text_input(f"Vorgabe", value=display_val, key=f"vg_{day}_{i}")
                     day_plan_to_save.append({"übung": ex_choice, "vorgabe": user_vorgabe})
                 
                 final_plan_to_save[day] = day_plan_to_save
@@ -227,71 +222,102 @@ if selected_athlete != "-- Neuer Sportler --":
                 st.success("Plan gespeichert!")
                 st.rerun()
 
-    # --- TAB 2: LOGBUCH & VIDEO ---
+    # --- TAB 2: LIVE-WORKOUT & LOGBUCH (NEU!) ---
     with tab2:
-        st.header("📖 Video-Logbuch & Tonnage")
-        st.info("💡 Nutze für die Leistung das Format **Gewicht/Wdh/Sätze** (z.B. `100/3/2 , 105/2/1`), damit die Analytics-Engine deine Tonnage und Lifts berechnen kann!")
+        st.header("🏋️‍♂️ Live-Workout (1-Klick Logbuch)")
+        st.info("Wähle deinen Plan und den heutigen Tag. Hake einfach ab, was du gemacht hast. Die Analytics erledigen den Rest!")
         
-        with st.form("log_form"):
-            col1, col2 = st.columns(2)
-            log_date = col1.date_input("Datum", datetime.date.today())
-            log_ex = col2.selectbox("Übung", ALL_EXERCISES)
+        saved_plans = list(athlete_data.get("saved_plans", {}).keys())
+        
+        if not saved_plans:
+            st.warning("Bitte erstelle und speichere zuerst einen Trainingsplan im ersten Tab!")
+        else:
+            col_p, col_d = st.columns(2)
+            selected_plan = col_p.selectbox("Welchen Plan trainierst du?", saved_plans)
             
-            col3, col4 = st.columns(2)
-            log_result = col3.text_input("Geschafft (Gewicht/Wdh/Sätze)", placeholder="100/3/2 , 105/2/1")
-            log_video = col4.text_input("Video-Link (optional)", placeholder="https://youtube.com/... oder Drive Link")
+            days_in_plan = list(athlete_data["saved_plans"][selected_plan].keys())
+            selected_day = col_d.selectbox("Welcher Tag ist heute?", days_in_plan)
             
-            log_notes = st.text_input("Notizen (Technik, Lockout, Gefühl...)", placeholder="Gut getroffen...")
+            workout_date = st.date_input("Datum", datetime.date.today())
             
-            if st.form_submit_button("Ins Logbuch eintragen"):
-                if log_result:
-                    tonnage, nl, max_w = parse_log_metrics(log_result)
-                    new_entry = {
-                        "Datum": str(log_date), "Übung": log_ex, "Leistung": log_result, 
-                        "Max Gewicht": max_w, "NL": nl, "Tonnage": tonnage, 
-                        "Video": log_video, "Notiz": log_notes
-                    }
-                    athlete_data["logbook"].append(new_entry)
+            exercises_today = athlete_data["saved_plans"][selected_plan][selected_day]
+            
+            st.divider()
+            
+            with st.form("live_workout_form"):
+                results_to_log = []
+                st.subheader(f"Dein Workout: {selected_day}")
+                
+                for i, ex in enumerate(exercises_today):
+                    ex_name = ex.get("übung", "Unbekannt")
+                    ex_vorgabe = ex.get("vorgabe", "")
+                    
+                    st.markdown(f"**{i+1}. {ex_name}**")
+                    c1, c2 = st.columns([1, 2])
+                    
+                    # Checkbox für "Erledigt"
+                    is_done = c1.checkbox(f"Erledigt", value=True, key=f"done_{i}")
+                    
+                    # Vorausgefülltes Textfeld, das der Nutzer ändern kann, wenn er abweicht
+                    actual_result = c2.text_input("Geleistetes Gewicht/Wdh/Sätze (Bei Abweichung ändern!)", value=ex_vorgabe, key=f"actual_{i}")
+                    
+                    results_to_log.append({
+                        "name": ex_name,
+                        "done": is_done,
+                        "result": actual_result
+                    })
+                    st.write("---")
+                
+                log_notes = st.text_input("Notizen zur heutigen Einheit (Optional)", placeholder="Knie hat leicht gezwickt, Rest gut...")
+                
+                if st.form_submit_button("✅ Gesamtes Workout ins Logbuch speichern"):
+                    logged_count = 0
+                    for item in results_to_log:
+                        if item["done"] and item["result"]:
+                            tonnage, nl, max_w = parse_log_metrics(item["result"])
+                            new_entry = {
+                                "Datum": str(workout_date), "Übung": item["name"], 
+                                "Leistung": item["result"], "Max Gewicht": max_w, 
+                                "NL": nl, "Tonnage": tonnage, "Notiz": log_notes
+                            }
+                            athlete_data["logbook"].append(new_entry)
+                            logged_count += 1
+                            
                     db[selected_athlete] = athlete_data
                     save_data(db)
-                    st.success(f"Gespeichert! (Erkannt: {nl} Lifts, {tonnage} kg Tonnage)")
+                    st.success(f"Bäm! {logged_count} Übungen erfolgreich im Logbuch gespeichert. Analytics wurden aktualisiert.")
                     st.rerun()
-                else:
-                    st.error("Bitte eine Leistung eintragen.")
-                    
-        st.divider()
-        if athlete_data["logbook"]:
-            df_log = pd.DataFrame(athlete_data["logbook"]).iloc[::-1]
-            st.dataframe(df_log, use_container_width=True, column_config={
-                "Video": st.column_config.LinkColumn("Video Link")
-            })
-        else:
-            st.info("Noch keine Einträge vorhanden.")
 
-    # --- TAB 3: ANALYTICS (NEU) ---
+        st.divider()
+        with st.expander("📖 Historie (Dein klassisches Logbuch ansehen)"):
+            if athlete_data["logbook"]:
+                df_log = pd.DataFrame(athlete_data["logbook"]).iloc[::-1]
+                st.dataframe(df_log, use_container_width=True)
+            else:
+                st.info("Noch keine Einträge vorhanden.")
+
+    # --- TAB 3: ANALYTICS ---
     with tab3:
         st.header("📈 Analytics & RTK Metriken")
         if not athlete_data["logbook"]:
-            st.warning("Trage zuerst Daten im Logbuch ein (im Format Gewicht/Wdh/Sätze), um Graphen zu sehen!")
+            st.warning("Trage zuerst Daten im Live-Workout ein, um Graphen zu sehen!")
         else:
             df = pd.DataFrame(athlete_data["logbook"])
             df['Datum'] = pd.to_datetime(df['Datum'])
             df = df.sort_values(by="Datum")
             
             c1, c2, c3 = st.columns(3)
-            # Gesamt-Statistiken
             total_tonnage = df.get('Tonnage', pd.Series([0])).sum()
             total_nl = df.get('NL', pd.Series([0])).sum()
             k_wert = round(total_tonnage / total_nl, 1) if total_nl > 0 else 0
             
             c1.metric("Gesamt Tonnage (Kilo bewegt)", f"{int(total_tonnage):,} kg")
             c2.metric("Total NL (Number of Lifts)", int(total_nl))
-            c3.metric("K-Wert (Ø Hantellast)", f"{k_wert} kg", help="Durchschnittsgewicht pro Wiederholung über alle Übungen")
+            c3.metric("K-Wert (Ø Hantellast)", f"{k_wert} kg")
             
             st.divider()
-            st.subheader("Kraftentwicklung (Maximal bewegtes Gewicht im Training)")
+            st.subheader("Kraftentwicklung (Maximal bewegtes Gewicht pro Einheit)")
             
-            # Graphen für Reißen, Stoßen, Beugen
             exercises_to_plot = ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten"]
             chart_data = pd.DataFrame(index=df['Datum'].unique())
             
@@ -299,44 +325,38 @@ if selected_athlete != "-- Neuer Sportler --":
             for ex in exercises_to_plot:
                 ex_data = df[df['Übung'] == ex]
                 if not ex_data.empty:
-                    # Nimm das maximale Gewicht pro Tag für diese Übung
                     daily_max = ex_data.groupby('Datum')['Max Gewicht'].max()
                     chart_data[ex] = daily_max
                     has_data = True
             
             if has_data:
-                chart_data = chart_data.ffill() # Fehlende Tage mit letztem Wert füllen
+                chart_data = chart_data.ffill() 
                 st.line_chart(chart_data)
             else:
-                st.info("Trage 'Reißen (Snatch)', 'Stoßen (Clean & Jerk)' oder 'Kniebeuge hinten' ins Logbuch ein, um den Graphen zu generieren.")
+                st.info("Trage 'Reißen (Snatch)', 'Stoßen (Clean & Jerk)' oder 'Kniebeuge hinten' ein, um den Graphen zu generieren.")
 
-    # --- TAB 4: WETTKAMPF & TOOLS (NEU) ---
+    # --- TAB 4: WETTKAMPF & TOOLS ---
     with tab4:
         st.header("🏆 Wettkampf-Manager & Tools")
-        
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🔥 Warm-Up Calculator")
-            st.write("Berechne deine exakten Aufwärmsätze für den Wettkampf.")
             opener_snatch = st.number_input("Dein 1. Versuch (Opener)", min_value=20, max_value=300, value=int(athlete_data["snatch"]*0.95))
-            
             st.markdown(f"""
             **Empfohlenes Aufwärmen für {opener_snatch} kg:**
             * Stange (20kg) x 2 Sätze x 5 Wdh
             * **{round(opener_snatch * 0.4 / 2.5) * 2.5} kg** x 3 Wdh
             * **{round(opener_snatch * 0.6 / 2.5) * 2.5} kg** x 2 Wdh
-            * **{round(opener_snatch * 0.8 / 2.5) * 2.5} kg** x 1 Wdh *(Zieh den Anzug an)*
+            * **{round(opener_snatch * 0.8 / 2.5) * 2.5} kg** x 1 Wdh
             * **{round(opener_snatch * 0.9 / 2.5) * 2.5} kg** x 1 Wdh
-            * **{round(opener_snatch * 0.95 / 2.5) * 2.5} kg** x 1 Wdh *(Letzter Versuch hinten, ca. 3 Lifts bevor du dran bist)*
+            * **{round(opener_snatch * 0.95 / 2.5) * 2.5} kg** x 1 Wdh
             """)
-
         with c2:
             st.subheader("🥇 Sinclair Rechner")
             total = athlete_data["snatch"] + athlete_data["cj"]
             sinclair = calc_sinclair(total, athlete_data["bw"], athlete_data["gender"])
             st.metric("Aktuelles Total", f"{total} kg")
             st.metric("Sinclair Score", f"{sinclair} Punkte")
-            st.caption("Gültige IWF/BVDG Sinclair-Formel (Näherungswerte Olympiazyklus). IWF Robi-Points benötigen tagesaktuelle Weltrekord-Datenbanken und verhalten sich ähnlich zur relativen Stärke.")
             
         st.divider()
         components.html("""
