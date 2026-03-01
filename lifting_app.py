@@ -78,16 +78,26 @@ RECOMMENDED_TEMPLATES = {
 }
 
 def get_rm_for_exercise(ex_choice, athlete_data):
-    if "Kniebeuge vorn" in ex_choice: return athlete_data.get("front_squat", athlete_data["squat"] * 0.85)
-    if "Kniebeuge hinten" in ex_choice: return athlete_data["squat"]
-    if "drücken" in ex_choice.lower() or "ausstoßen" in ex_choice.lower(): return athlete_data.get("push_press", athlete_data["cj"] * 0.8)
-    if "reiß" in ex_choice.lower(): return athlete_data["snatch"]
-    return athlete_data["cj"]
+    """Zuweisung der neuen, detaillierten 1RMs"""
+    choice = ex_choice.lower()
+    if "standreißen" in choice: return athlete_data.get("power_snatch", athlete_data["snatch"] * 0.82)
+    if "standumsetzen" in choice: return athlete_data.get("power_clean", athlete_data["cj"] * 0.82)
+    if "ausstoßen" in choice: return athlete_data.get("jerk", athlete_data["cj"] * 1.05)
+    if "zug" in choice or "kreuzheben" in choice: return athlete_data.get("deadlift", athlete_data["squat"] * 1.1)
+    if "kniebeuge vorn" in choice: return athlete_data.get("front_squat", athlete_data["squat"] * 0.85)
+    if "kniebeuge hinten" in choice: return athlete_data["squat"]
+    if "drücken" in choice: return athlete_data.get("push_press", athlete_data["cj"] * 0.8)
+    if "reiß" in choice: return athlete_data["snatch"]
+    return athlete_data["cj"] # Fallback für Stoßen
 
 def get_progressive_sets(phase, ex_name, rm):
     if ex_name in EXERCISE_CATALOG["ATH - Athletik & Rumpf"]: return "3 Sätze x 10-15 Wdh"
-    mod = 0.85 if "(Leicht)" in ex_name or "Stand" in ex_name else 1.0
+    
+    # Stand-Varianten und "Leichte" Tage werden nicht mehr pauschal mit 0.85 multipliziert,
+    # da wir jetzt echte 1RMs dafür haben! Nur "Leicht" als Zusatz bekommt noch einen Modifikator.
+    mod = 0.85 if "(Leicht)" in ex_name else 1.0
     rm = rm * mod
+    
     if "VP1" in phase:
         w1, w2, w3 = round(rm*0.70), round(rm*0.75), round(rm*0.80)
         return f"{w1}kg/4/2 , {w2}kg/3/2 , {w3}kg/3/1"
@@ -111,17 +121,28 @@ if selected_athlete == "-- Neuer Sportler --":
     new_gender = st.sidebar.radio("Geschlecht", ["Männlich", "Weiblich"])
     new_bw = st.sidebar.number_input("Körpergewicht (kg)", 40.0, 150.0, 80.0)
     
-    st.sidebar.markdown("**Aktuelle Bestwerte (1RM)**")
+    st.sidebar.markdown("**WK Übungen (1RM)**")
     new_snatch = st.sidebar.number_input("Reißen (Snatch)", 20, 250, 80)
     new_cj = st.sidebar.number_input("Stoßen (C&J)", 20, 300, 100)
+    
+    st.sidebar.markdown("**Kraft-Basis (1RM)**")
     new_squat = st.sidebar.number_input("Kniebeuge hinten", 20, 400, 120)
+    new_fsquat = st.sidebar.number_input("Kniebeuge vorn", 20, 350, int(new_squat*0.85))
+    new_deadlift = st.sidebar.number_input("Kreuzheben (oder schwere Züge)", 20, 400, int(new_squat*1.1))
+    
+    st.sidebar.markdown("**Spezifische Varianten (1RM)**")
+    new_psnatch = st.sidebar.number_input("Standreißen", 20, 200, int(new_snatch*0.82))
+    new_pclean = st.sidebar.number_input("Standumsetzen", 20, 250, int(new_cj*0.82))
+    new_jerk = st.sidebar.number_input("Ausstoßen (von Blöcken)", 20, 300, int(new_cj*1.05))
+    new_ppress = st.sidebar.number_input("Schwungdrücken", 20, 200, int(new_cj*0.8))
     
     if st.sidebar.button("Sportler Speichern"):
         if new_name:
             db[new_name] = {
                 "gender": new_gender, "bw": new_bw, 
                 "snatch": new_snatch, "cj": new_cj, 
-                "squat": new_squat, "front_squat": new_squat*0.85, "push_press": new_cj*0.8,
+                "squat": new_squat, "front_squat": new_fsquat, "deadlift": new_deadlift,
+                "power_snatch": new_psnatch, "power_clean": new_pclean, "jerk": new_jerk, "push_press": new_ppress,
                 "saved_plans": {}, "logbook": []
             }
             save_data(db)
@@ -129,22 +150,38 @@ if selected_athlete == "-- Neuer Sportler --":
             st.rerun()
 else:
     athlete_data = db[selected_athlete]
+    # Fallback für alte Daten (sorgt dafür, dass das Script bei alten Profilen nicht abstürzt)
     athlete_data.setdefault("logbook", [])
     athlete_data.setdefault("saved_plans", {})
-    athlete_data.setdefault("front_squat", athlete_data["squat"] * 0.85)
-    athlete_data.setdefault("push_press", athlete_data["cj"] * 0.8)
+    athlete_data.setdefault("front_squat", int(athlete_data["squat"] * 0.85))
+    athlete_data.setdefault("push_press", int(athlete_data["cj"] * 0.8))
+    athlete_data.setdefault("deadlift", int(athlete_data["squat"] * 1.1))
+    athlete_data.setdefault("power_snatch", int(athlete_data["snatch"] * 0.82))
+    athlete_data.setdefault("power_clean", int(athlete_data["cj"] * 0.82))
+    athlete_data.setdefault("jerk", int(athlete_data["cj"] * 1.05))
         
     st.sidebar.success(f"Eingeloggt: {selected_athlete}")
     with st.sidebar.expander("Profil & 1RM anpassen"):
         bw = st.number_input("Gewicht", value=float(athlete_data["bw"]))
+        st.markdown("**Wettkampf**")
         s_rm = st.number_input("Reißen", value=int(athlete_data["snatch"]))
         c_rm = st.number_input("Stoßen", value=int(athlete_data["cj"]))
+        st.markdown("**Basis**")
         sq_rm = st.number_input("KB hinten", value=int(athlete_data["squat"]))
         fsq_rm = st.number_input("KB vorn", value=int(athlete_data["front_squat"]))
-        pp_rm = st.number_input("Drücken", value=int(athlete_data["push_press"]))
+        dl_rm = st.number_input("Kreuzheben", value=int(athlete_data["deadlift"]))
+        st.markdown("**Varianten**")
+        ps_rm = st.number_input("Standreißen", value=int(athlete_data["power_snatch"]))
+        pc_rm = st.number_input("Standumsetzen", value=int(athlete_data["power_clean"]))
+        j_rm = st.number_input("Ausstoßen (Blöcke)", value=int(athlete_data["jerk"]))
+        pp_rm = st.number_input("Schwungdrücken", value=int(athlete_data["push_press"]))
         
         if st.button("Werte Update"):
-            db[selected_athlete].update({"bw": bw, "snatch": s_rm, "cj": c_rm, "squat": sq_rm, "front_squat": fsq_rm, "push_press": pp_rm})
+            db[selected_athlete].update({
+                "bw": bw, "snatch": s_rm, "cj": c_rm, "squat": sq_rm, 
+                "front_squat": fsq_rm, "deadlift": dl_rm,
+                "power_snatch": ps_rm, "power_clean": pc_rm, "jerk": j_rm, "push_press": pp_rm
+            })
             save_data(db)
             st.rerun()
 
@@ -152,7 +189,7 @@ else:
 # 4. HAUPT-APP
 # ==========================================
 if selected_athlete != "-- Neuer Sportler --":
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "🏋️‍♂️ Live-Workout (Logbuch)", "📈 Analytics", "🏆 Tools"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "🏋️‍♂️ Live-Workout", "📈 Analytics & Diagnostik", "🏆 Tools"])
 
     # --- TAB 1: TRAININGSPLAN GENERATOR ---
     with tab1:
@@ -203,6 +240,7 @@ if selected_athlete != "-- Neuer Sportler --":
                     
                     with c_ex: ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=idx, key=f"ex_{day}_{i}")
                     
+                    # HIER PASSIERT DIE MAGIE: Zuweisung der genauen 1RMs
                     rm_ref = get_rm_for_exercise(ex_choice, athlete_data)
                     recommendation = get_progressive_sets(phase, ex_choice, rm_ref)
                     display_val = saved_vorgabe if (plan_mode == "Gespeicherten Plan laden" and saved_vorgabe and ex_choice == default_ex) else recommendation
@@ -222,11 +260,9 @@ if selected_athlete != "-- Neuer Sportler --":
                 st.success("Plan gespeichert!")
                 st.rerun()
 
-    # --- TAB 2: LIVE-WORKOUT & LOGBUCH (NEU!) ---
+    # --- TAB 2: LIVE-WORKOUT & LOGBUCH ---
     with tab2:
         st.header("🏋️‍♂️ Live-Workout (1-Klick Logbuch)")
-        st.info("Wähle deinen Plan und den heutigen Tag. Hake einfach ab, was du gemacht hast. Die Analytics erledigen den Rest!")
-        
         saved_plans = list(athlete_data.get("saved_plans", {}).keys())
         
         if not saved_plans:
@@ -234,12 +270,9 @@ if selected_athlete != "-- Neuer Sportler --":
         else:
             col_p, col_d = st.columns(2)
             selected_plan = col_p.selectbox("Welchen Plan trainierst du?", saved_plans)
-            
             days_in_plan = list(athlete_data["saved_plans"][selected_plan].keys())
             selected_day = col_d.selectbox("Welcher Tag ist heute?", days_in_plan)
-            
             workout_date = st.date_input("Datum", datetime.date.today())
-            
             exercises_today = athlete_data["saved_plans"][selected_plan][selected_day]
             
             st.divider()
@@ -251,25 +284,14 @@ if selected_athlete != "-- Neuer Sportler --":
                 for i, ex in enumerate(exercises_today):
                     ex_name = ex.get("übung", "Unbekannt")
                     ex_vorgabe = ex.get("vorgabe", "")
-                    
                     st.markdown(f"**{i+1}. {ex_name}**")
                     c1, c2 = st.columns([1, 2])
-                    
-                    # Checkbox für "Erledigt"
                     is_done = c1.checkbox(f"Erledigt", value=True, key=f"done_{i}")
-                    
-                    # Vorausgefülltes Textfeld, das der Nutzer ändern kann, wenn er abweicht
                     actual_result = c2.text_input("Geleistetes Gewicht/Wdh/Sätze (Bei Abweichung ändern!)", value=ex_vorgabe, key=f"actual_{i}")
-                    
-                    results_to_log.append({
-                        "name": ex_name,
-                        "done": is_done,
-                        "result": actual_result
-                    })
+                    results_to_log.append({"name": ex_name, "done": is_done, "result": actual_result})
                     st.write("---")
                 
-                log_notes = st.text_input("Notizen zur heutigen Einheit (Optional)", placeholder="Knie hat leicht gezwickt, Rest gut...")
-                
+                log_notes = st.text_input("Notizen zur heutigen Einheit (Optional)", placeholder="Technik war stabil...")
                 if st.form_submit_button("✅ Gesamtes Workout ins Logbuch speichern"):
                     logged_count = 0
                     for item in results_to_log:
@@ -282,10 +304,9 @@ if selected_athlete != "-- Neuer Sportler --":
                             }
                             athlete_data["logbook"].append(new_entry)
                             logged_count += 1
-                            
                     db[selected_athlete] = athlete_data
                     save_data(db)
-                    st.success(f"Bäm! {logged_count} Übungen erfolgreich im Logbuch gespeichert. Analytics wurden aktualisiert.")
+                    st.success(f"Bäm! {logged_count} Übungen erfolgreich im Logbuch gespeichert.")
                     st.rerun()
 
         st.divider()
@@ -296,11 +317,46 @@ if selected_athlete != "-- Neuer Sportler --":
             else:
                 st.info("Noch keine Einträge vorhanden.")
 
-    # --- TAB 3: ANALYTICS ---
+    # --- TAB 3: ANALYTICS & DIAGNOSTIK (NEU!) ---
     with tab3:
-        st.header("📈 Analytics & RTK Metriken")
+        st.header("🧬 Schwachstellen-Diagnostik (Ratios)")
+        
+        s_val = athlete_data["snatch"]
+        cj_val = athlete_data["cj"]
+        sq_val = athlete_data["squat"]
+        fsq_val = athlete_data["front_squat"]
+        
+        # Berechnungen
+        ratio_s_cj = round((s_val / cj_val) * 100, 1) if cj_val > 0 else 0
+        ratio_cj_sq = round((cj_val / sq_val) * 100, 1) if sq_val > 0 else 0
+        ratio_fsq_sq = round((fsq_val / sq_val) * 100, 1) if sq_val > 0 else 0
+        
+        col1, col2, col3 = st.columns(3)
+        
+        # Diagnose 1: Reißen vs. Stoßen
+        col1.metric("Reißen zu Stoßen", f"{ratio_s_cj}%", "Ideal: 78% - 82%", delta_color="off")
+        if ratio_s_cj < 78: msg1 = "🔴 Dein Reißen ist im Verhältnis zu schwach. Fokus auf Explosivität und Reiß-Technik!"
+        elif ratio_s_cj > 83: msg1 = "🟡 Dein Reißen ist extrem stark! Vermutlich fehlt dir rohe Kraft für ein schwereres Stoßen."
+        else: msg1 = "🟢 Perfektes Gleichgewicht zwischen den Lifts."
+        col1.caption(msg1)
+        
+        # Diagnose 2: Stoßen vs. Beuge
+        col2.metric("Stoßen zu KB Hinten", f"{ratio_cj_sq}%", "Ideal: 75% - 80%", delta_color="off")
+        if ratio_cj_sq < 75: msg2 = "🔴 Du bringst deine Beinkraft nicht auf die Hantel. Fokus auf Umsetzen und Züge!"
+        elif ratio_cj_sq > 82: msg2 = "🟡 Du bist ein sehr effizienter Heber, aber dein absolutes Kraftlimit bremst dich. Mehr schwere Kniebeugen!"
+        else: msg2 = "🟢 Exzellente Effizienz."
+        col2.caption(msg2)
+
+        # Diagnose 3: Frontbeuge vs. Backbeuge
+        col3.metric("KB Vorn zu KB Hinten", f"{ratio_fsq_sq}%", "Ideal: 85% - 90%", delta_color="off")
+        if ratio_fsq_sq < 85: msg3 = "🔴 Rumpf/Quads sind deine Schwachstelle. Du fällst beim schweren Aufstehen wahrscheinlich nach vorn."
+        else: msg3 = "🟢 Sehr gute Aufrichtung und Quadrizeps-Dominanz."
+        col3.caption(msg3)
+
+        st.divider()
+        st.header("📈 Trainings-Analytics")
         if not athlete_data["logbook"]:
-            st.warning("Trage zuerst Daten im Live-Workout ein, um Graphen zu sehen!")
+            st.warning("Trage Daten im Live-Workout ein, um Graphen zu sehen!")
         else:
             df = pd.DataFrame(athlete_data["logbook"])
             df['Datum'] = pd.to_datetime(df['Datum'])
@@ -311,13 +367,11 @@ if selected_athlete != "-- Neuer Sportler --":
             total_nl = df.get('NL', pd.Series([0])).sum()
             k_wert = round(total_tonnage / total_nl, 1) if total_nl > 0 else 0
             
-            c1.metric("Gesamt Tonnage (Kilo bewegt)", f"{int(total_tonnage):,} kg")
-            c2.metric("Total NL (Number of Lifts)", int(total_nl))
+            c1.metric("Gesamt Tonnage", f"{int(total_tonnage):,} kg")
+            c2.metric("Total NL", int(total_nl))
             c3.metric("K-Wert (Ø Hantellast)", f"{k_wert} kg")
             
-            st.divider()
-            st.subheader("Kraftentwicklung (Maximal bewegtes Gewicht pro Einheit)")
-            
+            st.subheader("Kraftentwicklung")
             exercises_to_plot = ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten"]
             chart_data = pd.DataFrame(index=df['Datum'].unique())
             
@@ -332,8 +386,6 @@ if selected_athlete != "-- Neuer Sportler --":
             if has_data:
                 chart_data = chart_data.ffill() 
                 st.line_chart(chart_data)
-            else:
-                st.info("Trage 'Reißen (Snatch)', 'Stoßen (Clean & Jerk)' oder 'Kniebeuge hinten' ein, um den Graphen zu generieren.")
 
     # --- TAB 4: WETTKAMPF & TOOLS ---
     with tab4:
