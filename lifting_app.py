@@ -78,7 +78,6 @@ RECOMMENDED_TEMPLATES = {
 }
 
 def get_rm_for_exercise(ex_choice, athlete_data):
-    """Zuweisung der neuen, detaillierten 1RMs"""
     choice = ex_choice.lower()
     if "standreißen" in choice: return athlete_data.get("power_snatch", athlete_data["snatch"] * 0.82)
     if "standumsetzen" in choice: return athlete_data.get("power_clean", athlete_data["cj"] * 0.82)
@@ -88,14 +87,11 @@ def get_rm_for_exercise(ex_choice, athlete_data):
     if "kniebeuge hinten" in choice: return athlete_data["squat"]
     if "drücken" in choice: return athlete_data.get("push_press", athlete_data["cj"] * 0.8)
     if "reiß" in choice: return athlete_data["snatch"]
-    return athlete_data["cj"] # Fallback für Stoßen
+    return athlete_data["cj"]
 
 def get_progressive_sets(phase, ex_name, rm):
     if ex_name in EXERCISE_CATALOG["ATH - Athletik & Rumpf"]: return "3 Sätze x 10-15 Wdh"
-    
-    # Stand-Varianten und "Leichte" Tage werden nicht mehr pauschal mit 0.85 multipliziert,
-    # da wir jetzt echte 1RMs dafür haben! Nur "Leicht" als Zusatz bekommt noch einen Modifikator.
-    mod = 0.85 if "(Leicht)" in ex_name else 1.0
+    mod = 0.85 if "(Leicht)" in ex_name or "Stand" in ex_name else 1.0
     rm = rm * mod
     
     if "VP1" in phase:
@@ -121,28 +117,30 @@ if selected_athlete == "-- Neuer Sportler --":
     new_gender = st.sidebar.radio("Geschlecht", ["Männlich", "Weiblich"])
     new_bw = st.sidebar.number_input("Körpergewicht (kg)", 40.0, 150.0, 80.0)
     
-    st.sidebar.markdown("**WK Übungen (1RM)**")
+    st.sidebar.markdown("**Aktuelle Bestwerte**")
     new_snatch = st.sidebar.number_input("Reißen (Snatch)", 20, 250, 80)
     new_cj = st.sidebar.number_input("Stoßen (C&J)", 20, 300, 100)
     
-    st.sidebar.markdown("**Kraft-Basis (1RM)**")
-    new_squat = st.sidebar.number_input("Kniebeuge hinten", 20, 400, 120)
-    new_fsquat = st.sidebar.number_input("Kniebeuge vorn", 20, 350, int(new_squat*0.85))
-    new_deadlift = st.sidebar.number_input("Kreuzheben (oder schwere Züge)", 20, 400, int(new_squat*1.1))
+    st.sidebar.markdown("**🎯 Deine Ziele**")
+    goal_snatch = st.sidebar.number_input("Ziel: Reißen", 20, 300, new_snatch + 5)
+    goal_cj = st.sidebar.number_input("Ziel: Stoßen", 20, 350, new_cj + 5)
     
-    st.sidebar.markdown("**Spezifische Varianten (1RM)**")
-    new_psnatch = st.sidebar.number_input("Standreißen", 20, 200, int(new_snatch*0.82))
-    new_pclean = st.sidebar.number_input("Standumsetzen", 20, 250, int(new_cj*0.82))
-    new_jerk = st.sidebar.number_input("Ausstoßen (von Blöcken)", 20, 300, int(new_cj*1.05))
-    new_ppress = st.sidebar.number_input("Schwungdrücken", 20, 200, int(new_cj*0.8))
+    st.sidebar.caption("Die App errechnet Kniebeugen, Züge und Stand-Werte automatisch im Hintergrund. Du kannst sie später im Profil manuell anpassen!")
     
     if st.sidebar.button("Sportler Speichern"):
         if new_name:
             db[new_name] = {
                 "gender": new_gender, "bw": new_bw, 
                 "snatch": new_snatch, "cj": new_cj, 
-                "squat": new_squat, "front_squat": new_fsquat, "deadlift": new_deadlift,
-                "power_snatch": new_psnatch, "power_clean": new_pclean, "jerk": new_jerk, "push_press": new_ppress,
+                "goal_snatch": goal_snatch, "goal_cj": goal_cj,
+                # AUTO CALCULATE BASE STRENGTH based on current C&J / Snatch
+                "squat": int(new_cj / 0.78), 
+                "front_squat": int(new_cj / 0.85), 
+                "deadlift": int(new_cj * 1.25),
+                "power_snatch": int(new_snatch * 0.82), 
+                "power_clean": int(new_cj * 0.82), 
+                "jerk": int(new_cj * 1.05), 
+                "push_press": int(new_cj * 0.8),
                 "saved_plans": {}, "logbook": []
             }
             save_data(db)
@@ -150,27 +148,33 @@ if selected_athlete == "-- Neuer Sportler --":
             st.rerun()
 else:
     athlete_data = db[selected_athlete]
-    # Fallback für alte Daten (sorgt dafür, dass das Script bei alten Profilen nicht abstürzt)
+    # Fallback für alte Daten (verhindert Abstürze)
     athlete_data.setdefault("logbook", [])
     athlete_data.setdefault("saved_plans", {})
-    athlete_data.setdefault("front_squat", int(athlete_data["squat"] * 0.85))
+    athlete_data.setdefault("goal_snatch", athlete_data["snatch"] + 5)
+    athlete_data.setdefault("goal_cj", athlete_data["cj"] + 5)
+    athlete_data.setdefault("squat", int(athlete_data["cj"] / 0.78))
+    athlete_data.setdefault("front_squat", int(athlete_data["cj"] / 0.85))
     athlete_data.setdefault("push_press", int(athlete_data["cj"] * 0.8))
-    athlete_data.setdefault("deadlift", int(athlete_data["squat"] * 1.1))
+    athlete_data.setdefault("deadlift", int(athlete_data["cj"] * 1.25))
     athlete_data.setdefault("power_snatch", int(athlete_data["snatch"] * 0.82))
     athlete_data.setdefault("power_clean", int(athlete_data["cj"] * 0.82))
     athlete_data.setdefault("jerk", int(athlete_data["cj"] * 1.05))
         
     st.sidebar.success(f"Eingeloggt: {selected_athlete}")
-    with st.sidebar.expander("Profil & 1RM anpassen"):
+    with st.sidebar.expander("Profil, Ziele & 1RMs anpassen"):
         bw = st.number_input("Gewicht", value=float(athlete_data["bw"]))
-        st.markdown("**Wettkampf**")
+        
+        st.markdown("**🎯 Ziele**")
+        g_s = st.number_input("Ziel: Reißen", value=int(athlete_data["goal_snatch"]))
+        g_c = st.number_input("Ziel: Stoßen", value=int(athlete_data["goal_cj"]))
+        
+        st.markdown("**Aktuelle 1RMs** (Wurden automatisch errechnet, passe sie an, wenn du willst!)")
         s_rm = st.number_input("Reißen", value=int(athlete_data["snatch"]))
         c_rm = st.number_input("Stoßen", value=int(athlete_data["cj"]))
-        st.markdown("**Basis**")
         sq_rm = st.number_input("KB hinten", value=int(athlete_data["squat"]))
         fsq_rm = st.number_input("KB vorn", value=int(athlete_data["front_squat"]))
-        dl_rm = st.number_input("Kreuzheben", value=int(athlete_data["deadlift"]))
-        st.markdown("**Varianten**")
+        dl_rm = st.number_input("Kreuzheben/Züge", value=int(athlete_data["deadlift"]))
         ps_rm = st.number_input("Standreißen", value=int(athlete_data["power_snatch"]))
         pc_rm = st.number_input("Standumsetzen", value=int(athlete_data["power_clean"]))
         j_rm = st.number_input("Ausstoßen (Blöcke)", value=int(athlete_data["jerk"]))
@@ -179,6 +183,7 @@ else:
         if st.button("Werte Update"):
             db[selected_athlete].update({
                 "bw": bw, "snatch": s_rm, "cj": c_rm, "squat": sq_rm, 
+                "goal_snatch": g_s, "goal_cj": g_c,
                 "front_squat": fsq_rm, "deadlift": dl_rm,
                 "power_snatch": ps_rm, "power_clean": pc_rm, "jerk": j_rm, "push_press": pp_rm
             })
@@ -189,11 +194,13 @@ else:
 # 4. HAUPT-APP
 # ==========================================
 if selected_athlete != "-- Neuer Sportler --":
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "🏋️‍♂️ Live-Workout", "📈 Analytics & Diagnostik", "🏆 Tools"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "🏋️‍♂️ Live-Workout", "🎯 Ziele & Analytics", "🏆 Tools"])
 
     # --- TAB 1: TRAININGSPLAN GENERATOR ---
     with tab1:
-        st.header("Plan Generator (Manuelle Anpassung)")
+        st.header("Plan Generator")
+        st.info(f"**Dein aktuelles Ziel:** {athlete_data['goal_snatch']} kg Reißen | {athlete_data['goal_cj']} kg Stoßen. Der Plan errechnet sich aus deinen *aktuellen* Bestwerten, um dich dorthin aufzubauen!")
+        
         c1, c2 = st.columns(2)
         prep_weeks = c1.slider("Zykluslänge (Wochen)", 4, 16, 12)
         current_week = c2.slider("Aktuelle Woche", 1, prep_weeks, 1)
@@ -240,7 +247,6 @@ if selected_athlete != "-- Neuer Sportler --":
                     
                     with c_ex: ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=idx, key=f"ex_{day}_{i}")
                     
-                    # HIER PASSIERT DIE MAGIE: Zuweisung der genauen 1RMs
                     rm_ref = get_rm_for_exercise(ex_choice, athlete_data)
                     recommendation = get_progressive_sets(phase, ex_choice, rm_ref)
                     display_val = saved_vorgabe if (plan_mode == "Gespeicherten Plan laden" and saved_vorgabe and ex_choice == default_ex) else recommendation
@@ -262,7 +268,7 @@ if selected_athlete != "-- Neuer Sportler --":
 
     # --- TAB 2: LIVE-WORKOUT & LOGBUCH ---
     with tab2:
-        st.header("🏋️‍♂️ Live-Workout (1-Klick Logbuch)")
+        st.header("🏋️‍♂️ Live-Workout")
         saved_plans = list(athlete_data.get("saved_plans", {}).keys())
         
         if not saved_plans:
@@ -317,41 +323,50 @@ if selected_athlete != "-- Neuer Sportler --":
             else:
                 st.info("Noch keine Einträge vorhanden.")
 
-    # --- TAB 3: ANALYTICS & DIAGNOSTIK (NEU!) ---
+    # --- TAB 3: ZIELE & ANALYTICS ---
     with tab3:
-        st.header("🧬 Schwachstellen-Diagnostik (Ratios)")
+        st.header("🎯 Deine Ziel-Analyse (Was du brauchst)")
+        goal_s = athlete_data.get("goal_snatch", athlete_data["snatch"] + 5)
+        goal_cj = athlete_data.get("goal_cj", athlete_data["cj"] + 5)
         
+        st.write(f"Um dein Ziel von **{goal_s} kg Reißen** und **{goal_cj} kg Stoßen** sicher zu bewältigen, benötigst du laut sportwissenschaftlichen RTK-Standards ungefähr folgende Basis-Kraftwerte:")
+        
+        # Berechnung anhand der Ziele
+        req_sq = int(goal_cj / 0.78)
+        req_fsq = int(goal_cj / 0.85)
+        req_dl = int(goal_cj * 1.25)
+        req_ps = int(goal_s * 0.82)
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Kniebeuge hinten", f"{req_sq} kg", f"Dein aktuelles 1RM: {athlete_data['squat']} kg", delta_color="off")
+        c2.metric("Kniebeuge vorn", f"{req_fsq} kg", f"Dein aktuelles 1RM: {athlete_data['front_squat']} kg", delta_color="off")
+        c3.metric("Züge/Kreuzheben", f"{req_dl} kg", f"Dein aktuelles 1RM: {athlete_data['deadlift']} kg", delta_color="off")
+        c4.metric("Standreißen", f"{req_ps} kg", f"Dein aktuelles 1RM: {athlete_data['power_snatch']} kg", delta_color="off")
+        
+        st.divider()
+        st.header("🧬 Schwachstellen-Diagnostik (Aktueller Stand)")
         s_val = athlete_data["snatch"]
         cj_val = athlete_data["cj"]
         sq_val = athlete_data["squat"]
         fsq_val = athlete_data["front_squat"]
         
-        # Berechnungen
         ratio_s_cj = round((s_val / cj_val) * 100, 1) if cj_val > 0 else 0
         ratio_cj_sq = round((cj_val / sq_val) * 100, 1) if sq_val > 0 else 0
         ratio_fsq_sq = round((fsq_val / sq_val) * 100, 1) if sq_val > 0 else 0
         
-        col1, col2, col3 = st.columns(3)
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Reißen zu Stoßen", f"{ratio_s_cj}%", "Ideal: 78% - 82%", delta_color="off")
+        if ratio_s_cj < 78: d1.caption("🔴 Dein Reißen ist im Verhältnis zu schwach. Fokus auf Technik!")
+        elif ratio_s_cj > 83: d1.caption("🟡 Reißen stark! Dir fehlt Beinkraft für das schwere Umsetzen.")
+        else: d1.caption("🟢 Perfektes Gleichgewicht.")
         
-        # Diagnose 1: Reißen vs. Stoßen
-        col1.metric("Reißen zu Stoßen", f"{ratio_s_cj}%", "Ideal: 78% - 82%", delta_color="off")
-        if ratio_s_cj < 78: msg1 = "🔴 Dein Reißen ist im Verhältnis zu schwach. Fokus auf Explosivität und Reiß-Technik!"
-        elif ratio_s_cj > 83: msg1 = "🟡 Dein Reißen ist extrem stark! Vermutlich fehlt dir rohe Kraft für ein schwereres Stoßen."
-        else: msg1 = "🟢 Perfektes Gleichgewicht zwischen den Lifts."
-        col1.caption(msg1)
-        
-        # Diagnose 2: Stoßen vs. Beuge
-        col2.metric("Stoßen zu KB Hinten", f"{ratio_cj_sq}%", "Ideal: 75% - 80%", delta_color="off")
-        if ratio_cj_sq < 75: msg2 = "🔴 Du bringst deine Beinkraft nicht auf die Hantel. Fokus auf Umsetzen und Züge!"
-        elif ratio_cj_sq > 82: msg2 = "🟡 Du bist ein sehr effizienter Heber, aber dein absolutes Kraftlimit bremst dich. Mehr schwere Kniebeugen!"
-        else: msg2 = "🟢 Exzellente Effizienz."
-        col2.caption(msg2)
+        d2.metric("Stoßen zu KB Hinten", f"{ratio_cj_sq}%", "Ideal: 75% - 80%", delta_color="off")
+        if ratio_cj_sq < 75: d2.caption("🔴 Du bringst deine Beinkraft nicht auf die Hantel. Fokus auf Umsetzen und Züge!")
+        else: d2.caption("🟢 Exzellente Effizienz.")
 
-        # Diagnose 3: Frontbeuge vs. Backbeuge
-        col3.metric("KB Vorn zu KB Hinten", f"{ratio_fsq_sq}%", "Ideal: 85% - 90%", delta_color="off")
-        if ratio_fsq_sq < 85: msg3 = "🔴 Rumpf/Quads sind deine Schwachstelle. Du fällst beim schweren Aufstehen wahrscheinlich nach vorn."
-        else: msg3 = "🟢 Sehr gute Aufrichtung und Quadrizeps-Dominanz."
-        col3.caption(msg3)
+        d3.metric("KB Vorn zu KB Hinten", f"{ratio_fsq_sq}%", "Ideal: 85% - 90%", delta_color="off")
+        if ratio_fsq_sq < 85: d3.caption("🔴 Rumpf/Quads sind deine Schwachstelle.")
+        else: d3.caption("🟢 Sehr gute Aufrichtung und Quad-Dominanz.")
 
         st.divider()
         st.header("📈 Trainings-Analytics")
