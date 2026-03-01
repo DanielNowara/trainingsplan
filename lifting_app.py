@@ -4,11 +4,12 @@ import pandas as pd
 import json
 import os
 import datetime
+import math
 
-st.set_page_config(page_title="ProLifting Coach OS (RTK)", layout="wide", page_icon="🏋️‍♂️")
+st.set_page_config(page_title="ProLifting OS - Elite", layout="wide", page_icon="🥇")
 
 # ==========================================
-# 1. DATENBANK & SPEICHER-LOGIK
+# 1. DATENBANK & PARSER-LOGIK
 # ==========================================
 DATA_FILE = "athletes.json"
 
@@ -24,39 +25,58 @@ def save_data(data):
 
 db = load_data()
 
+def parse_log_metrics(log_string):
+    """Berechnet NL (Number of Lifts) und Tonnage aus einem String wie '100/3/2 , 105/2/1'"""
+    tonnage = 0
+    nl = 0
+    max_weight = 0
+    blocks = str(log_string).split(',')
+    for block in blocks:
+        parts = block.strip().split('/')
+        if len(parts) >= 3:
+            try:
+                w = float(parts[0].replace('kg', '').strip())
+                r = int(parts[1].strip())
+                s = int(parts[2].strip())
+                tonnage += w * r * s
+                nl += r * s
+                if w > max_weight: max_weight = w
+            except: pass
+    return tonnage, nl, max_weight
+
+def calc_sinclair(total, bw, gender):
+    """Sinclair Koeffizienten (Näherung für die aktuellen Olympischen Zyklen)"""
+    if gender == "Männlich": A, B = 0.7519, 175.5
+    else: A, B = 0.7834, 153.6
+    if bw > B: return total
+    res = 10 ** (A * (math.log10(bw / B) ** 2))
+    return round(total * res, 2)
+
 # ==========================================
 # 2. ÜBUNGEN NACH BVDG / IAT (RTK)
 # ==========================================
 EXERCISE_CATALOG = {
-    "WK & WK-nahe Übungen (Reißen)": ["Reißen (Snatch)", "Standreißen", "Hangreißen", "Reißkniebeuge", "Reißen aus Böcken"],
-    "WK & WK-nahe Übungen (Stoßen)": ["Stoßen (Clean & Jerk)", "Standumsetzen", "Ausstoßen", "Schwungdrücken", "Hangumsetzen"],
+    "WK & WK-nahe Übungen (Reißen)": ["Reißen (Snatch)", "Standreißen", "Hangreißen", "Reißkniebeuge"],
+    "WK & WK-nahe Übungen (Stoßen)": ["Stoßen (Clean & Jerk)", "Standumsetzen", "Ausstoßen", "Schwungdrücken"],
     "ZUB - Kniebeugen": ["Kniebeuge hinten", "Kniebeuge vorn", "Kniebeuge mit Stopp"],
-    "ZUB - Züge": ["Zug eng (Clean Pull)", "Zug breit (Snatch Pull)", "Kreuzheben eng", "Kreuzheben breit"],
-    "ATH - Athletik & Rumpf": ["Kraftdrücken (Strict Press)", "Plank / Unterarmstütz", "Rumpfaufrichten (Hyperextensions)", "Klimmzüge", "Bauchpresse", "Kugelschocken (Med-Ball)"]
+    "ZUB - Züge": ["Zug eng (Clean Pull)", "Zug breit (Snatch Pull)", "Kreuzheben"],
+    "ATH - Athletik & Rumpf": ["Kraftdrücken (Strict Press)", "Plank / Unterarmstütz", "Rumpfaufrichten (Hyperextensions)", "Bauchpresse"]
 }
 ALL_EXERCISES = [ex for sublist in EXERCISE_CATALOG.values() for ex in sublist]
 
 RECOMMENDED_TEMPLATES = {
-    2: {"Tag 1 (Fokus Reißen)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
-        "Tag 2 (Fokus Stoßen)": ["Stoßen (Clean & Jerk)", "Kniebeuge vorn", "Zug eng (Clean Pull)", "Rumpfaufrichten (Hyperextensions)"]},
-    3: {"Tag 1 (Reißen & Beuge)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)", "Kraftdrücken (Strict Press)"], 
-        "Tag 2 (Stand-Varianten)": ["Standumsetzen", "Schwungdrücken", "Kniebeuge vorn (Leicht)", "Bauchpresse"], 
-        "Tag 3 (Klassisch Schwer)": ["Stoßen (Clean & Jerk)", "Reißkniebeuge", "Zug eng (Clean Pull)", "Rumpfaufrichten (Hyperextensions)"]},
-    4: {"Tag 1 (Schwer Beugen)": ["Kniebeuge hinten", "Reißen (Snatch)", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
-        "Tag 2 (Schwer Umsetzen)": ["Stoßen (Clean & Jerk)", "Zug eng (Clean Pull)", "Schwungdrücken", "Klimmzüge"], 
-        "Tag 3 (Technik/Stand)": ["Standreißen", "Standumsetzen", "Reißkniebeuge", "Bauchpresse"], 
-        "Tag 4 (Wettkampfnah)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge vorn", "Rumpfaufrichten (Hyperextensions)"]},
-    5: {"Tag 1 (Technik Reißen)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
-        "Tag 2 (Technik Stoßen)": ["Stoßen (Clean & Jerk)", "Zug eng (Clean Pull)", "Kraftdrücken (Strict Press)", "Klimmzüge"], 
-        "Tag 3 (Stand/Entlastung)": ["Standreißen", "Standumsetzen", "Schwungdrücken", "Bauchpresse"], 
-        "Tag 4 (Schwer Beugen)": ["Kniebeuge vorn", "Ausstoßen", "Zug breit (Snatch Pull)", "Rumpfaufrichten (Hyperextensions)"], 
-        "Tag 5 (Max/Klassiker)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten", "Kugelschocken (Med-Ball)"]},
-    6: {"Tag 1 (Beuge & Reißen)": ["Kniebeuge hinten", "Reißen (Snatch)", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
-        "Tag 2 (Züge & Stoßen)": ["Stoßen (Clean & Jerk)", "Kniebeuge vorn", "Zug eng (Clean Pull)", "Bauchpresse"], 
-        "Tag 3 (Stand-Technik)": ["Standreißen", "Schwungdrücken", "Reißkniebeuge", "Klimmzüge"], 
-        "Tag 4 (Beuge & Ausstoßen)": ["Kniebeuge vorn", "Standumsetzen", "Kraftdrücken (Strict Press)", "Rumpfaufrichten (Hyperextensions)"], 
-        "Tag 5 (Hang-Technik)": ["Hangreißen", "Hangumsetzen", "Zug breit (Snatch Pull)", "Plank / Unterarmstütz"], 
-        "Tag 6 (Klassiker 100%)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten", "Kugelschocken (Med-Ball)"]}
+    3: {"Tag 1 (Reißen & Beuge)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)"], 
+        "Tag 2 (Stand-Varianten)": ["Standumsetzen", "Schwungdrücken", "Kniebeuge vorn (Leicht)"], 
+        "Tag 3 (Klassisch Schwer)": ["Stoßen (Clean & Jerk)", "Reißkniebeuge", "Zug eng (Clean Pull)"]},
+    4: {"Tag 1 (Schwer Beugen)": ["Kniebeuge hinten", "Reißen (Snatch)", "Zug breit (Snatch Pull)"], 
+        "Tag 2 (Schwer Umsetzen)": ["Stoßen (Clean & Jerk)", "Zug eng (Clean Pull)", "Schwungdrücken"], 
+        "Tag 3 (Technik/Stand)": ["Standreißen", "Standumsetzen", "Reißkniebeuge"], 
+        "Tag 4 (Wettkampfnah)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge vorn"]},
+    5: {"Tag 1 (Technik Reißen)": ["Reißen (Snatch)", "Kniebeuge hinten", "Zug breit (Snatch Pull)"], 
+        "Tag 2 (Technik Stoßen)": ["Stoßen (Clean & Jerk)", "Zug eng (Clean Pull)", "Kraftdrücken (Strict Press)"], 
+        "Tag 3 (Stand/Entlastung)": ["Standreißen", "Standumsetzen", "Schwungdrücken"], 
+        "Tag 4 (Schwer Beugen)": ["Kniebeuge vorn", "Ausstoßen", "Zug breit (Snatch Pull)"], 
+        "Tag 5 (Max/Klassiker)": ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten"]}
 }
 
 def get_rm_for_exercise(ex_choice, athlete_data):
@@ -67,12 +87,9 @@ def get_rm_for_exercise(ex_choice, athlete_data):
     return athlete_data["cj"]
 
 def get_progressive_sets(phase, ex_name, rm):
-    if ex_name in EXERCISE_CATALOG["ATH - Athletik & Rumpf"]:
-        return "3 Sätze x 10-15 Wdh (Zusatzlast nach Gefühl)"
-
+    if ex_name in EXERCISE_CATALOG["ATH - Athletik & Rumpf"]: return "3 Sätze x 10-15 Wdh"
     mod = 0.85 if "(Leicht)" in ex_name or "Stand" in ex_name else 1.0
     rm = rm * mod
-
     if "VP1" in phase:
         w1, w2, w3 = round(rm*0.70), round(rm*0.75), round(rm*0.80)
         return f"{w1}kg/4/2 , {w2}kg/3/2 , {w3}kg/3/1"
@@ -86,7 +103,7 @@ def get_progressive_sets(phase, ex_name, rm):
 # ==========================================
 # 3. SIDEBAR & PROFIL
 # ==========================================
-st.sidebar.title("🏋️‍♂️ BVDG/RTK Coach OS")
+st.sidebar.title("🥇 ProLifting OS")
 athlete_names = list(db.keys())
 selected_athlete = st.sidebar.selectbox("Sportler wählen", ["-- Neuer Sportler --"] + athlete_names)
 
@@ -100,15 +117,13 @@ if selected_athlete == "-- Neuer Sportler --":
     new_snatch = st.sidebar.number_input("Reißen (Snatch)", 20, 250, 80)
     new_cj = st.sidebar.number_input("Stoßen (C&J)", 20, 300, 100)
     new_squat = st.sidebar.number_input("Kniebeuge hinten", 20, 400, 120)
-    new_fsquat = st.sidebar.number_input("Kniebeuge vorn", 20, 350, 105)
-    new_ppress = st.sidebar.number_input("Schwungdrücken", 20, 200, 80)
     
     if st.sidebar.button("Sportler Speichern"):
         if new_name:
             db[new_name] = {
                 "gender": new_gender, "bw": new_bw, 
                 "snatch": new_snatch, "cj": new_cj, 
-                "squat": new_squat, "front_squat": new_fsquat, "push_press": new_ppress,
+                "squat": new_squat, "front_squat": new_squat*0.85, "push_press": new_cj*0.8,
                 "saved_plans": {}, "logbook": []
             }
             save_data(db)
@@ -116,23 +131,23 @@ if selected_athlete == "-- Neuer Sportler --":
             st.rerun()
 else:
     athlete_data = db[selected_athlete]
+    # Fallback für alte Daten
     athlete_data.setdefault("logbook", [])
     athlete_data.setdefault("saved_plans", {})
+    athlete_data.setdefault("front_squat", athlete_data["squat"] * 0.85)
+    athlete_data.setdefault("push_press", athlete_data["cj"] * 0.8)
         
     st.sidebar.success(f"Eingeloggt: {selected_athlete}")
-    with st.sidebar.expander("Profil anpassen"):
+    with st.sidebar.expander("Profil & 1RM anpassen"):
         bw = st.number_input("Gewicht", value=float(athlete_data["bw"]))
         s_rm = st.number_input("Reißen", value=int(athlete_data["snatch"]))
         c_rm = st.number_input("Stoßen", value=int(athlete_data["cj"]))
         sq_rm = st.number_input("KB hinten", value=int(athlete_data["squat"]))
-        fsq_rm = st.number_input("KB vorn", value=int(athlete_data.get("front_squat", sq_rm*0.85)))
-        pp_rm = st.number_input("Drücken", value=int(athlete_data.get("push_press", c_rm*0.8)))
+        fsq_rm = st.number_input("KB vorn", value=int(athlete_data["front_squat"]))
+        pp_rm = st.number_input("Drücken", value=int(athlete_data["push_press"]))
         
         if st.button("Werte Update"):
-            db[selected_athlete].update({
-                "bw": bw, "snatch": s_rm, "cj": c_rm, "squat": sq_rm, 
-                "front_squat": fsq_rm, "push_press": pp_rm
-            })
+            db[selected_athlete].update({"bw": bw, "snatch": s_rm, "cj": c_rm, "squat": sq_rm, "front_squat": fsq_rm, "push_press": pp_rm})
             save_data(db)
             st.rerun()
 
@@ -140,153 +155,196 @@ else:
 # 4. HAUPT-APP
 # ==========================================
 if selected_athlete != "-- Neuer Sportler --":
-    tab1, tab2, tab3 = st.tabs(["📝 Interaktiver Trainingsplan", "📖 Logbuch", "⏱️ Tools & Readiness"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Planer", "📖 Logbuch", "📈 Analytics", "🏆 Wettkampf & Tools"])
 
     # --- TAB 1: TRAININGSPLAN GENERATOR ---
     with tab1:
         st.header("Plan Generator (Manuelle Anpassung)")
-        
         c1, c2 = st.columns(2)
         prep_weeks = c1.slider("Zykluslänge (Wochen)", 4, 16, 12)
         current_week = c2.slider("Aktuelle Woche", 1, prep_weeks, 1)
         
-        if current_week <= prep_weeks * 0.4: phase = "VP1 (Vorbereitungsperiode 1) - Fokus: Volumen, Technik"
-        elif current_week <= prep_weeks * 0.8: phase = "VP2 (Vorbereitungsperiode 2) - Fokus: Kraftausprägung"
-        else: phase = "WP (Wettkampfperiode) - Fokus: Peaking"
+        if current_week <= prep_weeks * 0.4: phase = "VP1 (Vorbereitungsperiode 1) - Volumen & Technik"
+        elif current_week <= prep_weeks * 0.8: phase = "VP2 (Vorbereitungsperiode 2) - Kraftausprägung"
+        else: phase = "WP (Wettkampfperiode) - Peaking"
             
-        st.success(f"**Aktuelle Trainingsetappe:** {phase}")
+        st.success(f"**Trainingsetappe:** {phase}")
 
-        plan_mode = st.radio("Erstellungsmethode:", 
-                             ["RTK Musterplan laden", "Gespeicherten Plan laden", "Komplett selbst erstellen"], 
-                             horizontal=True)
+        plan_mode = st.radio("Erstellungsmethode:", ["RTK Musterplan laden", "Gespeicherten Plan laden", "Komplett selbst erstellen"], horizontal=True)
 
         current_plan_structure = {}
 
         if plan_mode == "RTK Musterplan laden":
-            days_per_week = st.selectbox("Trainingstage/Woche", [2, 3, 4, 5, 6], index=2)
+            days_per_week = st.selectbox("Trainingstage/Woche", [3, 4, 5], index=1)
             current_plan_structure = RECOMMENDED_TEMPLATES[days_per_week]
             
         elif plan_mode == "Gespeicherten Plan laden":
             saved_plans = list(athlete_data.get("saved_plans", {}).keys())
-            if not saved_plans: 
-                st.warning("Du hast noch keine Pläne gespeichert.")
-            else: 
-                selected_plan_name = st.selectbox("Wähle einen Plan", saved_plans)
-                current_plan_structure = athlete_data["saved_plans"][selected_plan_name]
+            if not saved_plans: st.warning("Keine Pläne gespeichert.")
+            else: current_plan_structure = athlete_data["saved_plans"][st.selectbox("Wähle einen Plan", saved_plans)]
                 
         elif plan_mode == "Komplett selbst erstellen":
-            custom_days = st.slider("Wie viele Trainingstage?", 1, 7, 4)
+            custom_days = st.slider("Wie viele Trainingstage?", 1, 6, 4)
             for i in range(custom_days):
                 day_name = f"Trainingstag {i+1}"
-                num_ex = st.number_input(f"Anzahl Übungen für {day_name}", 1, 8, 4, key=f"num_{i}")
+                num_ex = st.number_input(f"Anzahl Übungen {day_name}", 1, 8, 4, key=f"num_{i}")
                 current_plan_structure[day_name] = [{"übung": ALL_EXERCISES[0], "vorgabe": ""}] * num_ex
 
         st.divider()
-        st.markdown("### Dein aktueller Plan")
-        st.info("💡 **Tipp:** Die Werte im rechten Textfeld sind smarte Empfehlungen. Du kannst reinklicken, sie verändern und den Plan danach als *deinen* ganz persönlichen Plan speichern!")
-        
+        st.markdown("### Dein interaktiver Plan")
         final_plan_to_save = {}
         
-        # Interaktive Anzeige der Tage
         for day, exercises in current_plan_structure.items():
             with st.expander(f"📅 {day}", expanded=True):
                 day_plan_to_save = []
-                
                 for i, item in enumerate(exercises):
-                    # Rückwärtskompatibilität: Falls der Plan alt ist und nur aus Strings besteht
                     if isinstance(item, dict):
-                        default_ex = item.get("übung", ALL_EXERCISES[0])
-                        saved_vorgabe = item.get("vorgabe", "")
+                        default_ex, saved_vorgabe = item.get("übung", ALL_EXERCISES[0]), item.get("vorgabe", "")
                     else:
-                        default_ex = item
-                        saved_vorgabe = ""
+                        default_ex, saved_vorgabe = item, ""
                         
-                    # Sicheres Index-Finden
                     idx = ALL_EXERCISES.index(default_ex) if default_ex in ALL_EXERCISES else 0
-
                     c_ex, c_rep = st.columns([1, 2])
                     
-                    with c_ex:
-                        # Übungsauswahl ist in ALLEN Modi verfügbar (volle Freiheit)
-                        ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=idx, key=f"ex_{day}_{i}")
+                    with c_ex: ex_choice = st.selectbox(f"Übung {i+1}", ALL_EXERCISES, index=idx, key=f"ex_{day}_{i}")
                     
-                    # Berechne die aktuelle Empfehlung der App
                     rm_ref = get_rm_for_exercise(ex_choice, athlete_data)
                     recommendation = get_progressive_sets(phase, ex_choice, rm_ref)
-                    
-                    # Welcher Text wird im Feld angezeigt?
-                    # Wenn wir einen alten Plan geladen haben, die Übung nicht verändert wurde und eine Vorgabe existiert, nutze diese.
-                    if plan_mode == "Gespeicherten Plan laden" and saved_vorgabe and ex_choice == default_ex:
-                        display_val = saved_vorgabe
-                    else:
-                        display_val = recommendation # Sonst nimm immer die frische App-Empfehlung
+                    display_val = saved_vorgabe if (plan_mode == "Gespeicherten Plan laden" and saved_vorgabe and ex_choice == default_ex) else recommendation
 
-                    with c_rep:
-                        # Hier kann der Nutzer alles manuell eintippen!
-                        user_vorgabe = st.text_input(f"Vorgabe (App-Empfehlung: {recommendation})", value=display_val, key=f"vg_{day}_{i}")
-                    
-                    # Speichere das Ergebnis als Dictionary
+                    with c_rep: user_vorgabe = st.text_input(f"Vorgabe (App: {recommendation})", value=display_val, key=f"vg_{day}_{i}")
                     day_plan_to_save.append({"übung": ex_choice, "vorgabe": user_vorgabe})
                 
                 final_plan_to_save[day] = day_plan_to_save
                 
         st.divider()
-        st.subheader("Plan dauerhaft speichern")
-        save_name = st.text_input("Name für den Plan (z.B. 'Meine Individuelle VP1')", placeholder="Plan Name eingeben...")
-        if st.button("Diesen individuellen Plan speichern"):
+        save_name = st.text_input("Name für den Plan", placeholder="z.B. 'Mein RTK Zyklus 1'")
+        if st.button("Individuellen Plan speichern"):
             if save_name:
                 athlete_data["saved_plans"][save_name] = final_plan_to_save
                 db[selected_athlete] = athlete_data
                 save_data(db)
-                st.success(f"Erfolgreich gespeichert! Der Plan '{save_name}' merkt sich nun exakt deine eingetragenen Wiederholungen und Gewichte.")
+                st.success("Plan gespeichert!")
                 st.rerun()
-            else:
-                st.error("Bitte gib dem Plan einen Namen.")
 
-    # --- TAB 2: LOGBUCH & HISTORY ---
+    # --- TAB 2: LOGBUCH & VIDEO ---
     with tab2:
-        st.header("📖 Trainings-Logbuch")
+        st.header("📖 Video-Logbuch & Tonnage")
+        st.info("💡 Nutze für die Leistung das Format **Gewicht/Wdh/Sätze** (z.B. `100/3/2 , 105/2/1`), damit die Analytics-Engine deine Tonnage und Lifts berechnen kann!")
+        
         with st.form("log_form"):
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             log_date = col1.date_input("Datum", datetime.date.today())
             log_ex = col2.selectbox("Übung", ALL_EXERCISES)
-            log_result = col3.text_input("Geschafft (z.B. 100/3/2)", placeholder="Gewicht / Wdh / Sätze")
-            log_notes = st.text_input("Notizen", placeholder="Gut getroffen / Etwas weich im Empfangen...")
+            
+            col3, col4 = st.columns(2)
+            log_result = col3.text_input("Geschafft (Gewicht/Wdh/Sätze)", placeholder="100/3/2 , 105/2/1")
+            log_video = col4.text_input("Video-Link (optional)", placeholder="https://youtube.com/... oder Drive Link")
+            
+            log_notes = st.text_input("Notizen (Technik, Lockout, Gefühl...)", placeholder="Gut getroffen...")
             
             if st.form_submit_button("Ins Logbuch eintragen"):
                 if log_result:
-                    new_entry = {"Datum": str(log_date), "Übung": log_ex, "Leistung": log_result, "Notiz": log_notes}
+                    tonnage, nl, max_w = parse_log_metrics(log_result)
+                    new_entry = {
+                        "Datum": str(log_date), "Übung": log_ex, "Leistung": log_result, 
+                        "Max Gewicht": max_w, "NL": nl, "Tonnage": tonnage, 
+                        "Video": log_video, "Notiz": log_notes
+                    }
                     athlete_data["logbook"].append(new_entry)
                     db[selected_athlete] = athlete_data
                     save_data(db)
-                    st.success("Erfolgreich gespeichert!")
+                    st.success(f"Gespeichert! (Erkannt: {nl} Lifts, {tonnage} kg Tonnage)")
                     st.rerun()
                 else:
                     st.error("Bitte eine Leistung eintragen.")
                     
         st.divider()
-        st.subheader("Deine letzten Einheiten")
         if athlete_data["logbook"]:
             df_log = pd.DataFrame(athlete_data["logbook"]).iloc[::-1]
-            st.dataframe(df_log, use_container_width=True)
+            st.dataframe(df_log, use_container_width=True, column_config={
+                "Video": st.column_config.LinkColumn("Video Link")
+            })
         else:
             st.info("Noch keine Einträge vorhanden.")
 
-    # --- TAB 3: READINESS & TOOLS ---
+    # --- TAB 3: ANALYTICS (NEU) ---
     with tab3:
-        st.header("Readiness & Pausen")
-        
-        sleep = st.slider("Schlafqualität", 1, 10, 7)
-        stress = st.slider("Stress (1-10)", 1, 10, 4)
-        if (sleep - stress) < 2:
-            st.warning("⚠️ Dein ZNS scheint vorbelastet. Überlege, die schweren Sätze heute um 5% zu reduzieren.")
+        st.header("📈 Analytics & RTK Metriken")
+        if not athlete_data["logbook"]:
+            st.warning("Trage zuerst Daten im Logbuch ein (im Format Gewicht/Wdh/Sätze), um Graphen zu sehen!")
+        else:
+            df = pd.DataFrame(athlete_data["logbook"])
+            df['Datum'] = pd.to_datetime(df['Datum'])
+            df = df.sort_values(by="Datum")
             
+            c1, c2, c3 = st.columns(3)
+            # Gesamt-Statistiken
+            total_tonnage = df.get('Tonnage', pd.Series([0])).sum()
+            total_nl = df.get('NL', pd.Series([0])).sum()
+            k_wert = round(total_tonnage / total_nl, 1) if total_nl > 0 else 0
+            
+            c1.metric("Gesamt Tonnage (Kilo bewegt)", f"{int(total_tonnage):,} kg")
+            c2.metric("Total NL (Number of Lifts)", int(total_nl))
+            c3.metric("K-Wert (Ø Hantellast)", f"{k_wert} kg", help="Durchschnittsgewicht pro Wiederholung über alle Übungen")
+            
+            st.divider()
+            st.subheader("Kraftentwicklung (Maximal bewegtes Gewicht im Training)")
+            
+            # Graphen für Reißen, Stoßen, Beugen
+            exercises_to_plot = ["Reißen (Snatch)", "Stoßen (Clean & Jerk)", "Kniebeuge hinten"]
+            chart_data = pd.DataFrame(index=df['Datum'].unique())
+            
+            has_data = False
+            for ex in exercises_to_plot:
+                ex_data = df[df['Übung'] == ex]
+                if not ex_data.empty:
+                    # Nimm das maximale Gewicht pro Tag für diese Übung
+                    daily_max = ex_data.groupby('Datum')['Max Gewicht'].max()
+                    chart_data[ex] = daily_max
+                    has_data = True
+            
+            if has_data:
+                chart_data = chart_data.ffill() # Fehlende Tage mit letztem Wert füllen
+                st.line_chart(chart_data)
+            else:
+                st.info("Trage 'Reißen (Snatch)', 'Stoßen (Clean & Jerk)' oder 'Kniebeuge hinten' ins Logbuch ein, um den Graphen zu generieren.")
+
+    # --- TAB 4: WETTKAMPF & TOOLS (NEU) ---
+    with tab4:
+        st.header("🏆 Wettkampf-Manager & Tools")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("🔥 Warm-Up Calculator")
+            st.write("Berechne deine exakten Aufwärmsätze für den Wettkampf.")
+            opener_snatch = st.number_input("Dein 1. Versuch (Opener)", min_value=20, max_value=300, value=int(athlete_data["snatch"]*0.95))
+            
+            st.markdown(f"""
+            **Empfohlenes Aufwärmen für {opener_snatch} kg:**
+            * Stange (20kg) x 2 Sätze x 5 Wdh
+            * **{round(opener_snatch * 0.4 / 2.5) * 2.5} kg** x 3 Wdh
+            * **{round(opener_snatch * 0.6 / 2.5) * 2.5} kg** x 2 Wdh
+            * **{round(opener_snatch * 0.8 / 2.5) * 2.5} kg** x 1 Wdh *(Zieh den Anzug an)*
+            * **{round(opener_snatch * 0.9 / 2.5) * 2.5} kg** x 1 Wdh
+            * **{round(opener_snatch * 0.95 / 2.5) * 2.5} kg** x 1 Wdh *(Letzter Versuch hinten, ca. 3 Lifts bevor du dran bist)*
+            """)
+
+        with c2:
+            st.subheader("🥇 Sinclair Rechner")
+            total = athlete_data["snatch"] + athlete_data["cj"]
+            sinclair = calc_sinclair(total, athlete_data["bw"], athlete_data["gender"])
+            st.metric("Aktuelles Total", f"{total} kg")
+            st.metric("Sinclair Score", f"{sinclair} Punkte")
+            st.caption("Gültige IWF/BVDG Sinclair-Formel (Näherungswerte Olympiazyklus). IWF Robi-Points benötigen tagesaktuelle Weltrekord-Datenbanken und verhalten sich ähnlich zur relativen Stärke.")
+            
+        st.divider()
         components.html("""
-        <div style="background:#1e1e1e; padding:15px; border-radius:10px; color:white; text-align:center; margin-top: 20px;">
+        <div style="background:#1e1e1e; padding:15px; border-radius:10px; color:white; text-align:center;">
             <h3>ZNS-Pausen-Timer</h3><h1 id="t">02:00</h1>
-            <button onclick="s(90)" style="background:#FF9800; color:white; border:none; padding:10px; border-radius:5px;">1.5 Min (ZUB)</button>
-            <button onclick="s(120)" style="background:#4CAF50; color:white; border:none; padding:10px; border-radius:5px;">2 Min (WK)</button>
-            <button onclick="s(180)" style="background:#2196F3; color:white; border:none; padding:10px; border-radius:5px;">3 Min (Max)</button>
+            <button onclick="s(90)" style="background:#FF9800; color:white; border:none; padding:10px; border-radius:5px;">1.5 Min</button>
+            <button onclick="s(120)" style="background:#4CAF50; color:white; border:none; padding:10px; border-radius:5px;">2 Min</button>
+            <button onclick="s(180)" style="background:#2196F3; color:white; border:none; padding:10px; border-radius:5px;">3 Min</button>
             <script>var i; function s(d){clearInterval(i); var t=d,m,s; i=setInterval(function(){m=parseInt(t/60,10);s=parseInt(t%60,10);document.getElementById('t').textContent=(m<10?"0"+m:m)+":"+(s<10?"0"+s:s);if(--t<0)clearInterval(i);},1000);}</script>
         </div>""", height=220)
 
